@@ -43,3 +43,18 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# ─── Firebase / API keys — NIKAD u git ──────────────────────────────────────
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+macos/Runner/GoogleService-Info.plist
+firebase_options.dart
+
+# ─── Android signing (keystore) ─────────────────────────────────────────────
+android/key.properties
+*.jks
+*.keystore
+
+# ─── RevenueCat / ostali API ključevi ako su u env fajlovima ────────────────
+.env
+*.env

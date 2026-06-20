@@ -5,30 +5,43 @@ service cloud.firestore {
     function isLoggedIn() {
       return request.auth != null;
     }
+
     function isOwner(uid) {
       return request.auth.uid == uid;
     }
+
     function getUserData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
+
     function getUserRole() {
       return getUserData().role;
     }
+
     function getUserCompanyId() {
       return getUserData().current_company_id;
     }
+
     function isAdmin() {
       return getUserRole() == 'admin';
     }
+
     function isManager() {
       return getUserRole() == 'manager';
     }
+
+    function isWorker() {
+      return getUserRole() == 'worker';
+    }
+
     function isAdminOrManager() {
       return isAdmin() || isManager();
     }
+
     function belongsToCompany(companyId) {
       return getUserCompanyId() == companyId;
     }
+
     function isCompanyOwner(companyId) {
       return isAdmin() && get(/databases/$(database)/documents/companies/$(companyId)).data.owner_id == request.auth.uid;
     }
@@ -40,7 +53,7 @@ service cloud.firestore {
       allow create: if isLoggedIn() && isOwner(userId);
       allow update: if isLoggedIn() && isOwner(userId)
         && !request.resource.data.diff(resource.data).affectedKeys()
-            .hasAny(['role', 'current_company_id', 'active_status']);
+          .hasAny(['role', 'current_company_id', 'active_status']);
       allow update: if isLoggedIn() && isAdmin()
         && belongsToCompany(resource.data.current_company_id)
         && isCompanyOwner(resource.data.current_company_id);
@@ -67,7 +80,7 @@ service cloud.firestore {
       allow update: if isLoggedIn() && isWorker()
         && resource.data.worker_id == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['worker_comment', 'has_comment']);
+          .hasOnly(['worker_comment', 'has_comment']);
       allow delete: if isLoggedIn() && isAdmin()
         && belongsToCompany(resource.data.company_id);
     }
@@ -87,7 +100,7 @@ service cloud.firestore {
       allow update: if isLoggedIn() && isAdminOrManager()
         && belongsToCompany(resource.data.company_id)
         && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['status', 'reviewed_by', 'reviewed_at']);
+          .hasOnly(['status', 'reviewed_by', 'reviewed_at']);
       allow delete: if false;
     }
 
@@ -106,9 +119,28 @@ service cloud.firestore {
       allow update: if isLoggedIn()
         && resource.data.recipient_id == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['is_read', 'read_at']);
+          .hasOnly(['is_read', 'read_at']);
       allow create: if isLoggedIn() && isAdminOrManager();
       allow delete: if false;
+    }
+
+    // Subscription je vezana za firmu — čita je samo admin te firme.
+    // Write (kreiranje/izmena nakon kupovine) ide isključivo preko
+    // Cloud Functions / Admin SDK-a, koji zaobilazi Security Rules,
+    // pa klijentu (uključujući admina) ne dozvoljavamo direktan write.
+    match /subscriptions/{subscriptionId} {
+      allow read: if isLoggedIn() && isAdmin()
+        && belongsToCompany(resource.data.company_id);
+      allow write: if false;
+    }
+
+    // Leave policy (kvote za godišnji/bolovanje i sl.) — čitaju je
+    // admin i manager firme; menja je samo admin (on postavlja kvote).
+    match /leave_policies/{companyId} {
+      allow read: if isLoggedIn() && isAdminOrManager()
+        && belongsToCompany(companyId);
+      allow write: if isLoggedIn() && isAdmin()
+        && belongsToCompany(companyId);
     }
   }
 }
