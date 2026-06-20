@@ -1,0 +1,114 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isLoggedIn() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return request.auth.uid == uid;
+    }
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function getUserRole() {
+      return getUserData().role;
+    }
+    function getUserCompanyId() {
+      return getUserData().current_company_id;
+    }
+    function isAdmin() {
+      return getUserRole() == 'admin';
+    }
+    function isManager() {
+      return getUserRole() == 'manager';
+    }
+    function isAdminOrManager() {
+      return isAdmin() || isManager();
+    }
+    function belongsToCompany(companyId) {
+      return getUserCompanyId() == companyId;
+    }
+    function isCompanyOwner(companyId) {
+      return isAdmin() && get(/databases/$(database)/documents/companies/$(companyId)).data.owner_id == request.auth.uid;
+    }
+
+    match /users/{userId} {
+      allow read: if isLoggedIn() && isOwner(userId);
+      allow read: if isLoggedIn() && isAdminOrManager()
+        && getUserCompanyId() == resource.data.current_company_id;
+      allow create: if isLoggedIn() && isOwner(userId);
+      allow update: if isLoggedIn() && isOwner(userId)
+        && !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['role', 'current_company_id', 'active_status']);
+      allow update: if isLoggedIn() && isAdmin()
+        && belongsToCompany(resource.data.current_company_id)
+        && isCompanyOwner(resource.data.current_company_id);
+      allow delete: if false;
+    }
+
+    match /companies/{companyId} {
+      allow read: if isLoggedIn() && belongsToCompany(companyId);
+      allow create: if isLoggedIn() && isAdmin()
+        && request.resource.data.owner_id == request.auth.uid;
+      allow update: if isLoggedIn() && isCompanyOwner(companyId);
+      allow delete: if isLoggedIn() && isCompanyOwner(companyId);
+    }
+
+    match /shifts/{shiftId} {
+      allow read: if isLoggedIn() && isWorker()
+        && resource.data.worker_id == request.auth.uid;
+      allow read: if isLoggedIn() && isAdminOrManager()
+        && belongsToCompany(resource.data.company_id);
+      allow create: if isLoggedIn() && isAdminOrManager()
+        && request.resource.data.company_id == getUserCompanyId();
+      allow update: if isLoggedIn() && isAdminOrManager()
+        && belongsToCompany(resource.data.company_id);
+      allow update: if isLoggedIn() && isWorker()
+        && resource.data.worker_id == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['worker_comment', 'has_comment']);
+      allow delete: if isLoggedIn() && isAdmin()
+        && belongsToCompany(resource.data.company_id);
+    }
+
+    match /requests/{requestId} {
+      allow read: if isLoggedIn() && isWorker()
+        && resource.data.user_id == request.auth.uid;
+      allow read: if isLoggedIn() && isAdminOrManager()
+        && belongsToCompany(resource.data.company_id);
+      allow create: if isLoggedIn()
+        && request.resource.data.user_id == request.auth.uid
+        && request.resource.data.status == 'pending';
+      allow update: if isLoggedIn() && isWorker()
+        && resource.data.user_id == request.auth.uid
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'cancelled';
+      allow update: if isLoggedIn() && isAdminOrManager()
+        && belongsToCompany(resource.data.company_id)
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'reviewed_by', 'reviewed_at']);
+      allow delete: if false;
+    }
+
+    match /support_tickets/{ticketId} {
+      allow read: if isLoggedIn()
+        && resource.data.user_id == request.auth.uid;
+      allow create: if isLoggedIn()
+        && request.resource.data.user_id == request.auth.uid
+        && request.resource.data.status == 'new';
+      allow update, delete: if false;
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isLoggedIn()
+        && resource.data.recipient_id == request.auth.uid;
+      allow update: if isLoggedIn()
+        && resource.data.recipient_id == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['is_read', 'read_at']);
+      allow create: if isLoggedIn() && isAdminOrManager();
+      allow delete: if false;
+    }
+  }
+}
