@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/services/firestore_service.dart';
+import '../../../data/services/leave_policy_service.dart';
 
 class WorkerDetailScreen extends StatefulWidget {
   final UserModel worker;
@@ -16,6 +17,7 @@ class WorkerDetailScreen extends StatefulWidget {
 
 class _WorkerDetailScreenState extends State<WorkerDetailScreen> {
   final FirestoreService _service = FirestoreService();
+  final LeavePolicyService _leavePolicyService = LeavePolicyService();
   final DateFormat _dateFmt = DateFormat('dd.MM.yyyy');
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
@@ -26,6 +28,11 @@ class _WorkerDetailScreenState extends State<WorkerDetailScreen> {
   int _hoursThisYear = 0;
   int _sickDaysThisYear = 0;
   int _vacationUsed = 0;
+
+  // Godišnji odmor — sad dinamički iz LeavePolicyModel + requests,
+  // ne iz statičkog worker.vacationDays polja (koje se rasinhronizovalo).
+  int _vacationTotal = 20;
+  int _vacationRemaining = 0;
 
   @override
   void initState() {
@@ -41,6 +48,17 @@ class _WorkerDetailScreenState extends State<WorkerDetailScreen> {
 
     try {
       final now = DateTime.now();
+      final companyId = widget.worker.currentCompanyId;
+
+      if (companyId == null) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _errorMessage = 'Radnik nije dodeljen nijednoj firmi';
+          });
+        }
+        return;
+      }
 
       final weekStart =
           DateTime(now.year, now.month, now.day - (now.weekday - 1));
@@ -55,6 +73,7 @@ class _WorkerDetailScreenState extends State<WorkerDetailScreen> {
         _service
             .getTotalMinutesForWorker(
               workerId: widget.worker.uid,
+              companyId: companyId,
               from: weekStart,
               to: weekEnd,
             )
@@ -62,6 +81,7 @@ class _WorkerDetailScreenState extends State<WorkerDetailScreen> {
         _service
             .getTotalMinutesForWorker(
               workerId: widget.worker.uid,
+              companyId: companyId,
               from: monthStart,
               to: monthEnd,
             )
@@ -69,17 +89,31 @@ class _WorkerDetailScreenState extends State<WorkerDetailScreen> {
         _service
             .getTotalMinutesForWorker(
               workerId: widget.worker.uid,
+              companyId: companyId,
               from: yearStart,
               to: yearEnd,
             )
             .catchError((_) => 0),
       ]);
 
-      // Bolovanje i odmor iz requests
+      // Bolovanje iz requests (i dalje lokalno, samo informativno)
       final sickDays =
           await _getSickDays(widget.worker.uid, yearStart, yearEnd);
+
+      // Godišnji odmor — kvota iz LeavePolicyModel, preostalo iz
+      // LeavePolicyService.getWorkerRemainingDays (kvota - odobreni dani)
+      final policy = await _leavePolicyService.getPolicy(companyId);
+      final vacationType = policy.getType('vacation');
+      final remainingByType = await _leavePolicyService.getWorkerRemainingDays(
+        userId: widget.worker.uid,
+        companyId: companyId,
+        year: now.year,
+      );
+
+      final vacationTotal = vacationType?.daysPerYear ?? 20;
+      final vacationRemaining = remainingByType['vacation'] ?? vacationTotal;
       final vacationUsed =
-          await _getVacationUsed(widget.worker.uid, yearStart, yearEnd);
+          (vacationTotal - vacationRemaining).clamp(0, vacationTotal);
 
       if (mounted) {
         setState(() {
@@ -87,6 +121,8 @@ class _WorkerDetailScreenState extends State<WorkerDetailScreen> {
           _hoursThisMonth = (results[1] as int) ~/ 60;
           _hoursThisYear = (results[2] as int) ~/ 60;
           _sickDaysThisYear = sickDays;
+          _vacationTotal = vacationTotal;
+          _vacationRemaining = vacationRemaining;
           _vacationUsed = vacationUsed;
           _isLoading = false;
         });
@@ -122,31 +158,6 @@ class _WorkerDetailScreenState extends State<WorkerDetailScreen> {
 
         if (overlapEnd.isAfter(overlapStart)) {
           days += overlapEnd.difference(overlapStart).inDays + 1;
-        }
-      }
-      return days;
-    } catch (_) {
-      return 0;
-    }
-  }
-
-  Future<int> _getVacationUsed(
-      String userId, DateTime from, DateTime to) async {
-    try {
-      final snap = await _db
-          .collection('requests')
-          .where('user_id', isEqualTo: userId)
-          .where('type', isEqualTo: 'vacation')
-          .where('status', isEqualTo: 'approved')
-          .get();
-
-      int days = 0;
-      for (final doc in snap.docs) {
-        final data = doc.data();
-        final requestedDays = data['requested_days'] as int? ?? 0;
-        final start = (data['start_date'] as Timestamp).toDate();
-        if (!start.isBefore(from) && !start.isAfter(to)) {
-          days += requestedDays;
         }
       }
       return days;
@@ -331,7 +342,7 @@ class _WorkerDetailScreenState extends State<WorkerDetailScreen> {
                   _InfoRow(
                       icon: Icons.beach_access_rounded,
                       label: 'Ukupno dana',
-                      value: '20 dana'),
+                      value: '$_vacationTotal dana'),
                   _Divider(),
                   _InfoRow(
                       icon: Icons.check_circle_outline_rounded,
@@ -342,7 +353,7 @@ class _WorkerDetailScreenState extends State<WorkerDetailScreen> {
                   _InfoRow(
                       icon: Icons.hourglass_bottom_rounded,
                       label: 'Preostalo',
-                      value: '${worker.vacationDays} dana',
+                      value: '$_vacationRemaining dana',
                       valueColor: AppColors.success),
                   _Divider(),
                   Padding(
@@ -354,7 +365,9 @@ class _WorkerDetailScreenState extends State<WorkerDetailScreen> {
                         ClipRRect(
                           borderRadius: BorderRadius.circular(6),
                           child: LinearProgressIndicator(
-                            value: worker.vacationDays / 20,
+                            value: _vacationTotal > 0
+                                ? _vacationRemaining / _vacationTotal
+                                : 0,
                             backgroundColor: AppColors.error.withOpacity(0.2),
                             valueColor: const AlwaysStoppedAnimation<Color>(
                                 AppColors.success),
@@ -363,7 +376,7 @@ class _WorkerDetailScreenState extends State<WorkerDetailScreen> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          '${worker.vacationDays} od 20 dana preostalo',
+                          '$_vacationRemaining od $_vacationTotal dana preostalo',
                           style: theme.textTheme.bodySmall,
                         ),
                       ],

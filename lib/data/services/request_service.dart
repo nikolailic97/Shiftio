@@ -48,6 +48,7 @@ class RequestService {
     String? reason,
   }) async {
     final days = endDate.difference(startDate).inDays + 1;
+
     final docRef = _db.collection('requests').doc();
     final request = RequestModel(
       requestId: docRef.id,
@@ -61,6 +62,7 @@ class RequestService {
       createdAt: DateTime.now(),
       requestedDays: days,
     );
+
     await docRef.set(request.toFirestore());
   }
 
@@ -79,6 +81,7 @@ class RequestService {
       status: RequestStatus.pending, // ← pending, ne auto-approved
       createdAt: DateTime.now(),
     );
+
     await docRef.set(request.toFirestore());
   }
 
@@ -90,28 +93,15 @@ class RequestService {
     });
   }
 
-  /// Admin odobrava zahtev
   Future<void> approveRequest({
     required String requestId,
     required String reviewedBy,
   }) async {
-    final doc = await _db.collection('requests').doc(requestId).get();
-    if (!doc.exists) return;
-    final data = doc.data()!;
-
     await _db.collection('requests').doc(requestId).update({
       'status': RequestStatus.approved.value,
       'reviewed_by': reviewedBy,
       'reviewed_at': Timestamp.fromDate(DateTime.now()),
     });
-
-    // Smanji vacation_days SAMO pri odobravanju (ne pri kreiranju)
-    if (data['type'] == 'vacation' && data['requested_days'] != null) {
-      final requestedDays = data['requested_days'] as int;
-      await _db.collection('users').doc(data['user_id']).update({
-        'vacation_days': FieldValue.increment(-requestedDays),
-      });
-    }
   }
 
   /// Admin odbija zahtev sa napomenom
@@ -148,6 +138,7 @@ class RequestService {
       message: message,
       timestamp: DateTime.now(),
     );
+
     await docRef.set(ticket.toFirestore());
   }
 

@@ -74,7 +74,6 @@ class UserModel {
       phone: data['phone'] ?? '',
       role: UserRoleExtension.fromString(data['role'] ?? 'worker'),
       currentCompanyId: data['current_company_id'],
-      vacationDays: data['vacation_days'] ?? 20,
       activeStatus: data['active_status'] ?? true,
       profileImageUrl: data['profile_image_url'],
       fcmToken: data['fcm_token'],

@@ -47,10 +47,7 @@ class ReportService {
     for (final worker in workers) {
       // Ukupni sati rada
       final totalMinutes = await _firestoreService.getTotalMinutesForWorker(
-        workerId: worker.uid,
-        from: from,
-        to: to,
-      );
+          workerId: worker.uid, from: from, to: to, companyId: companyId);
 
       // Dani bolovanja u periodu
       final sickDays = await _getSickDays(

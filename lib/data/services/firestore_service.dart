@@ -177,15 +177,17 @@ class FirestoreService {
     bool sendNotification = false,
   }) async {
     final batchId = _uuid.v4();
-    
+
     // Firestore batch max 500 — splitujemo ako treba
     const maxBatchSize = 400;
     final chunks = <List<String>>[];
-    
+
     for (int i = 0; i < workerIds.length; i += maxBatchSize) {
       chunks.add(workerIds.sublist(
         i,
-        i + maxBatchSize > workerIds.length ? workerIds.length : i + maxBatchSize,
+        i + maxBatchSize > workerIds.length
+            ? workerIds.length
+            : i + maxBatchSize,
       ));
     }
 
@@ -246,14 +248,24 @@ class FirestoreService {
   // ─── STATISTICS ──────────────────────────────────────────────────────────────
 
   /// Ukupni sati radnika za dati period
+  ///
+  /// companyId je OBAVEZAN — Firestore Rules za admin/manager čitanje
+  /// zahtevaju da query filtrira i po company_id (belongsToCompany), inače
+  /// Firestore ne može da dokaže da query zadovoljava admin/manager pravilo
+  /// i odbija celu listu, čak i kad je admin/manager zaista iz te firme.
+  /// Worker koji gleda SVOJE sate može da prosledi istu vrednost iz
+  /// worker.currentCompanyId — filter ne menja rezultat za njega, samo
+  /// zadovoljava rules.
   Future<int> getTotalMinutesForWorker({
     required String workerId,
+    required String companyId,
     required DateTime from,
     required DateTime to,
   }) async {
     final snap = await _db
         .collection('shifts')
         .where('worker_id', isEqualTo: workerId)
+        .where('company_id', isEqualTo: companyId)
         .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(from))
         .where('date', isLessThan: Timestamp.fromDate(to))
         .get();
