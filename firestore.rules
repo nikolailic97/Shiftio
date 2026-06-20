@@ -68,11 +68,28 @@ service cloud.firestore {
       allow delete: if isLoggedIn() && isCompanyOwner(companyId);
     }
 
+    // ─── SHIFTS ──────────────────────────────────────────────────────────
+    // Read je razdvojen na get (jedan dokument) i list (query) jer
+    // Firestore evaluira list/query protiv CELOG skupa allow-read pravila
+    // odjednom — ako bilo koje pravilo zavisi od polja koje nije deo
+    // where() filtera (npr. company_id kad worker query filtrira samo po
+    // worker_id), Firestore odbija CEO query kao bezbednosnu meru, čak i
+    // ako bi konkretan dokument prošao to pravilo. Razdvajanjem na get/list
+    // svaki tip operacije ima sopstveni, samodovoljan uslov.
     match /shifts/{shiftId} {
-      allow read: if isLoggedIn() && isWorker()
+      // Pojedinačno čitanje jednog shift dokumenta (npr. detail screen)
+      allow get: if isLoggedIn() && isWorker()
         && resource.data.worker_id == request.auth.uid;
-      allow read: if isLoggedIn() && isAdminOrManager()
+      allow get: if isLoggedIn() && isAdminOrManager()
         && belongsToCompany(resource.data.company_id);
+
+      // Query/list — worker upit MORA filtrirati po worker_id da bi prošao
+      allow list: if isLoggedIn() && isWorker()
+        && request.auth.uid == resource.data.worker_id;
+      // Query/list — admin/manager upit MORA filtrirati po company_id
+      allow list: if isLoggedIn() && isAdminOrManager()
+        && belongsToCompany(resource.data.company_id);
+
       allow create: if isLoggedIn() && isAdminOrManager()
         && request.resource.data.company_id == getUserCompanyId();
       allow update: if isLoggedIn() && isAdminOrManager()
@@ -85,11 +102,19 @@ service cloud.firestore {
         && belongsToCompany(resource.data.company_id);
     }
 
+    // ─── REQUESTS ────────────────────────────────────────────────────────
+    // Isti razlog za get/list razdvajanje kao kod shifts.
     match /requests/{requestId} {
-      allow read: if isLoggedIn() && isWorker()
+      allow get: if isLoggedIn() && isWorker()
         && resource.data.user_id == request.auth.uid;
-      allow read: if isLoggedIn() && isAdminOrManager()
+      allow get: if isLoggedIn() && isAdminOrManager()
         && belongsToCompany(resource.data.company_id);
+
+      allow list: if isLoggedIn() && isWorker()
+        && request.auth.uid == resource.data.user_id;
+      allow list: if isLoggedIn() && isAdminOrManager()
+        && belongsToCompany(resource.data.company_id);
+
       allow create: if isLoggedIn()
         && request.resource.data.user_id == request.auth.uid
         && request.resource.data.status == 'pending';
