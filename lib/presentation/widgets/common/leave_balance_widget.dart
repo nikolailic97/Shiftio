@@ -41,6 +41,7 @@ class _LeaveBalanceWidgetState extends State<LeaveBalanceWidget> {
       final used = await _service.getWorkerUsedDays(
         userId: user.uid,
         year: DateTime.now().year,
+        companyId: user.currentCompanyId!,
       );
 
       if (mounted) {

@@ -96,34 +96,62 @@ class _WorkerDetailScreenState extends State<WorkerDetailScreen> {
             .catchError((_) => 0),
       ]);
 
-      // Bolovanje iz requests (i dalje lokalno, samo informativno)
-      final sickDays =
-          await _getSickDays(widget.worker.uid, yearStart, yearEnd);
-
-      // Godišnji odmor — kvota iz LeavePolicyModel, preostalo iz
-      // LeavePolicyService.getWorkerRemainingDays (kvota - odobreni dani)
-      final policy = await _leavePolicyService.getPolicy(companyId);
-      final vacationType = policy.getType('vacation');
-      final remainingByType = await _leavePolicyService.getWorkerRemainingDays(
-        userId: widget.worker.uid,
-        companyId: companyId,
-        year: now.year,
-      );
-
-      final vacationTotal = vacationType?.daysPerYear ?? 20;
-      final vacationRemaining = remainingByType['vacation'] ?? vacationTotal;
-      final vacationUsed =
-          (vacationTotal - vacationRemaining).clamp(0, vacationTotal);
-
+      // Radni sati su uspešno učitani u ovom trenutku — primeni ih odmah,
+      // nezavisno od onoga što se desi ispod (bolovanje/godišnji), da pad u
+      // jednom delu statistike ne obriše već dobijene rezultate iz drugog.
       if (mounted) {
         setState(() {
           _hoursThisWeek = (results[0] as int) ~/ 60;
           _hoursThisMonth = (results[1] as int) ~/ 60;
           _hoursThisYear = (results[2] as int) ~/ 60;
+        });
+      }
+
+      // Bolovanje iz requests — odvojen try/catch da ne obori radne sate
+      int sickDays = 0;
+      try {
+        sickDays = await _getSickDays(
+          widget.worker.uid,
+          companyId,
+          yearStart,
+          yearEnd,
+        );
+      } catch (_) {
+        sickDays = 0;
+      }
+
+      // Godišnji odmor — kvota iz LeavePolicyModel, preostalo iz
+      // LeavePolicyService.getWorkerRemainingDays (kvota - odobreni dani).
+      // Odvojen try/catch da ne obori radne sate niti bolovanje.
+      int vacationTotal = 20;
+      int vacationRemaining = 0;
+      int vacationUsed = 0;
+      String? vacationError;
+      try {
+        final policy = await _leavePolicyService.getPolicy(companyId);
+        final vacationType = policy.getType('vacation');
+        final remainingByType =
+            await _leavePolicyService.getWorkerRemainingDays(
+          userId: widget.worker.uid,
+          companyId: companyId,
+          year: now.year,
+        );
+
+        vacationTotal = vacationType?.daysPerYear ?? 20;
+        vacationRemaining = remainingByType['vacation'] ?? vacationTotal;
+        vacationUsed =
+            (vacationTotal - vacationRemaining).clamp(0, vacationTotal);
+      } catch (_) {
+        vacationError = 'Greška pri učitavanju godišnjeg odmora';
+      }
+
+      if (mounted) {
+        setState(() {
           _sickDaysThisYear = sickDays;
           _vacationTotal = vacationTotal;
           _vacationRemaining = vacationRemaining;
           _vacationUsed = vacationUsed;
+          _errorMessage = vacationError;
           _isLoading = false;
         });
       }
@@ -137,11 +165,13 @@ class _WorkerDetailScreenState extends State<WorkerDetailScreen> {
     }
   }
 
-  Future<int> _getSickDays(String userId, DateTime from, DateTime to) async {
+  Future<int> _getSickDays(
+      String userId, String companyId, DateTime from, DateTime to) async {
     try {
       final snap = await _db
           .collection('requests')
           .where('user_id', isEqualTo: userId)
+          .where('company_id', isEqualTo: companyId)
           .where('type', isEqualTo: 'sick')
           .where('status', whereIn: ['approved', 'completed']).get();
 

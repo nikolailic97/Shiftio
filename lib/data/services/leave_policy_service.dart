@@ -7,10 +7,7 @@ class LeavePolicyService {
   // ─── DOHVATI POLICY ───────────────────────────────────────────────────────────
 
   Future<LeavePolicyModel> getPolicy(String companyId) async {
-    final doc = await _db
-        .collection('leave_policies')
-        .doc(companyId)
-        .get();
+    final doc = await _db.collection('leave_policies').doc(companyId).get();
 
     if (!doc.exists) {
       // Kreiraj default policy
@@ -49,8 +46,17 @@ class LeavePolicyService {
   // ─── WORKER BALANCE ───────────────────────────────────────────────────────────
 
   /// Dohvati iskorišćene dane po tipu za radnika u ovoj godini
+  ///
+  /// companyId je OBAVEZAN — isti razlog kao kod getTotalMinutesForWorker u
+  /// firestore_service.dart: Firestore Rules za admin/manager čitanje
+  /// zahtevaju da query filtrira i po company_id (belongsToCompany), inače
+  /// query strukturno ne odgovara nijednom allow-pravilu kad ga pokreće
+  /// admin/manager koji gleda tuđe podatke (worker koji gleda SVOJE podatke
+  /// takođe može da prosledi isti companyId — ne menja rezultat, samo
+  /// zadovoljava rules).
   Future<Map<String, int>> getWorkerUsedDays({
     required String userId,
+    required String companyId,
     required int year,
   }) async {
     final yearStart = DateTime(year, 1, 1);
@@ -59,11 +65,11 @@ class LeavePolicyService {
     final snap = await _db
         .collection('requests')
         .where('user_id', isEqualTo: userId)
+        .where('company_id', isEqualTo: companyId)
         .where('status', isEqualTo: 'approved')
         .get();
 
     final Map<String, int> used = {};
-
     for (final doc in snap.docs) {
       final data = doc.data();
       final type = data['type'] as String? ?? 'vacation';
@@ -74,7 +80,6 @@ class LeavePolicyService {
         used[type] = (used[type] ?? 0) + requestedDays;
       }
     }
-
     return used;
   }
 
@@ -85,12 +90,17 @@ class LeavePolicyService {
     required int year,
   }) async {
     final policy = await getPolicy(companyId);
-    final used = await getWorkerUsedDays(userId: userId, year: year);
+    final used = await getWorkerUsedDays(
+      userId: userId,
+      companyId: companyId,
+      year: year,
+    );
 
     final Map<String, int> remaining = {};
     for (final type in policy.leaveTypes) {
       final usedDays = used[type.id] ?? 0;
-      remaining[type.id] = (type.daysPerYear - usedDays).clamp(0, type.daysPerYear);
+      remaining[type.id] =
+          (type.daysPerYear - usedDays).clamp(0, type.daysPerYear);
     }
     return remaining;
   }
