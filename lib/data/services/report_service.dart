@@ -3,7 +3,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:excel/excel.dart';
-import '../models/user_model.dart';
 import 'firestore_service.dart';
 
 class WorkerReportRow {
@@ -159,7 +158,6 @@ class ReportService {
       fontColorHex: ExcelColor.fromHexString('#FFFFFF'),
     );
 
-    final headerRow = sheet.row(3);
     for (int i = 0; i < headers.length; i++) {
       final cell =
           sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 3));
@@ -293,7 +291,8 @@ class ReportService {
     final fileName =
         'Shiftio_Izvjestaj_${DateFormat('yyyy-MM-dd').format(from)}_${DateFormat('yyyy-MM-dd').format(to)}.csv';
     final file = File('${dir.path}/$fileName');
-    await file.writeAsString(buffer.toString(), encoding: SystemEncoding());
+    await file.writeAsString(buffer.toString(),
+        encoding: const SystemEncoding());
     return file;
   }
 

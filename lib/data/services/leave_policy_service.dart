@@ -44,24 +44,29 @@ class LeavePolicyService {
   }
 
   // ─── WORKER BALANCE ───────────────────────────────────────────────────────────
-
-  /// Dohvati iskorišćene dane po tipu za radnika u ovoj godini
-  ///
-  /// companyId je OBAVEZAN — isti razlog kao kod getTotalMinutesForWorker u
-  /// firestore_service.dart: Firestore Rules za admin/manager čitanje
-  /// zahtevaju da query filtrira i po company_id (belongsToCompany), inače
-  /// query strukturno ne odgovara nijednom allow-pravilu kad ga pokreće
-  /// admin/manager koji gleda tuđe podatke (worker koji gleda SVOJE podatke
-  /// takođe može da prosledi isti companyId — ne menja rezultat, samo
-  /// zadovoljava rules).
   Future<Map<String, int>> getWorkerUsedDays({
     required String userId,
     required String companyId,
     required int year,
   }) async {
-    final yearStart = DateTime(year, 1, 1);
-    final yearEnd = DateTime(year + 1, 1, 1);
+    final policy = await getPolicy(companyId);
+    final period = policy.currentPeriod(DateTime(year, 6, 15));
 
+    return _getUsedDaysForPeriod(
+      userId: userId,
+      companyId: companyId,
+      from: period.start,
+      to: period.end,
+    );
+  }
+
+  /// Iskorišćeni dani po tipu za TAČNO određen period [from, to).
+  Future<Map<String, int>> _getUsedDaysForPeriod({
+    required String userId,
+    required String companyId,
+    required DateTime from,
+    required DateTime to,
+  }) async {
     final snap = await _db
         .collection('requests')
         .where('user_id', isEqualTo: userId)
@@ -76,14 +81,14 @@ class LeavePolicyService {
       final start = (data['start_date'] as Timestamp).toDate();
       final requestedDays = data['requested_days'] as int? ?? 0;
 
-      if (!start.isBefore(yearStart) && start.isBefore(yearEnd)) {
+      if (!start.isBefore(from) && start.isBefore(to)) {
         used[type] = (used[type] ?? 0) + requestedDays;
       }
     }
     return used;
   }
 
-  /// Preostali dani po tipu za radnika
+  /// Preostali dani po tipu za radnika u tekućem obračunskom periodu
   Future<Map<String, int>> getWorkerRemainingDays({
     required String userId,
     required String companyId,

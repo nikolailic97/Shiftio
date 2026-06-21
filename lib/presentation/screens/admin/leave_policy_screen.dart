@@ -21,6 +21,21 @@ class _LeavePolicyScreenState extends State<LeavePolicyScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
 
+  static const List<String> _monthNames = [
+    'Januar',
+    'Februar',
+    'Mart',
+    'April',
+    'Maj',
+    'Jun',
+    'Jul',
+    'Avgust',
+    'Septembar',
+    'Oktobar',
+    'Novembar',
+    'Decembar',
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -33,8 +48,7 @@ class _LeavePolicyScreenState extends State<LeavePolicyScreen> {
 
     setState(() => _isLoading = true);
     try {
-      final policy =
-          await _service.getPolicy(user!.currentCompanyId!);
+      final policy = await _service.getPolicy(user!.currentCompanyId!);
       setState(() {
         _policy = policy;
         _isLoading = false;
@@ -76,11 +90,7 @@ class _LeavePolicyScreenState extends State<LeavePolicyScreen> {
     final types = List<LeaveType>.from(_policy!.leaveTypes);
     types[index] = updated;
     setState(() {
-      _policy = LeavePolicyModel(
-        companyId: _policy!.companyId,
-        leaveTypes: types,
-        updatedAt: DateTime.now(),
-      );
+      _policy = _policy!.copyWith(leaveTypes: types);
     });
   }
 
@@ -94,10 +104,8 @@ class _LeavePolicyScreenState extends State<LeavePolicyScreen> {
       requiresApproval: true,
     );
     setState(() {
-      _policy = LeavePolicyModel(
-        companyId: _policy!.companyId,
+      _policy = _policy!.copyWith(
         leaveTypes: [..._policy!.leaveTypes, newType],
-        updatedAt: DateTime.now(),
       );
     });
   }
@@ -105,6 +113,7 @@ class _LeavePolicyScreenState extends State<LeavePolicyScreen> {
   void _removeLeaveType(int index) {
     if (_policy == null) return;
     final types = List<LeaveType>.from(_policy!.leaveTypes);
+
     // Ne dozvoli brisanje standardnih tipova
     final type = types[index];
     if (['vacation', 'sick', 'slava'].contains(type.id)) {
@@ -116,14 +125,25 @@ class _LeavePolicyScreenState extends State<LeavePolicyScreen> {
       );
       return;
     }
+
     types.removeAt(index);
     setState(() {
-      _policy = LeavePolicyModel(
-        companyId: _policy!.companyId,
-        leaveTypes: types,
-        updatedAt: DateTime.now(),
-      );
+      _policy = _policy!.copyWith(leaveTypes: types);
     });
+  }
+
+  void _updateResetDate(int month, int day) {
+    if (_policy == null) return;
+    setState(() {
+      _policy = _policy!.copyWith(resetMonth: month, resetDay: day);
+    });
+  }
+
+  int _daysInMonth(int month) {
+    // Koristimo neprestupnu godinu kao referencu (29.2 retko relevantno
+    // za reset datum, a izbegavamo komplikaciju sa prestupnim godinama)
+    const daysPerMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    return daysPerMonth[month - 1];
   }
 
   @override
@@ -143,7 +163,8 @@ class _LeavePolicyScreenState extends State<LeavePolicyScreen> {
             onPressed: _isSaving ? null : _savePolicy,
             child: _isSaving
                 ? const SizedBox(
-                    width: 18, height: 18,
+                    width: 18,
+                    height: 18,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: AppColors.primary))
                 : const Text(
@@ -170,8 +191,8 @@ class _LeavePolicyScreenState extends State<LeavePolicyScreen> {
                       decoration: BoxDecoration(
                         color: AppColors.infoLight,
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                            color: AppColors.info.withOpacity(0.3)),
+                        border:
+                            Border.all(color: AppColors.info.withOpacity(0.3)),
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -193,6 +214,90 @@ class _LeavePolicyScreenState extends State<LeavePolicyScreen> {
 
                     const SizedBox(height: 24),
 
+                    // ─── Reset datum ────────────────────────────────────────
+                    Text('Obnavljanje kvota',
+                        style: theme.textTheme.headlineMedium),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Datum kada se svim radnicima ponovo dodeljuje puna '
+                      'kvota odmora (npr. 1. mart svake godine).',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color:
+                            isDark ? AppColors.cardDark : AppColors.cardLight,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.event_repeat_rounded,
+                              color: AppColors.primary, size: 20),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: DropdownButtonFormField<int>(
+                              value: _policy!.resetDay
+                                  .clamp(1, _daysInMonth(_policy!.resetMonth)),
+                              decoration: const InputDecoration(
+                                labelText: 'Dan',
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 8),
+                              ),
+                              items: List.generate(
+                                _daysInMonth(_policy!.resetMonth),
+                                (i) => DropdownMenuItem(
+                                  value: i + 1,
+                                  child: Text('${i + 1}.'),
+                                ),
+                              ),
+                              onChanged: (day) {
+                                if (day != null) {
+                                  _updateResetDate(_policy!.resetMonth, day);
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: DropdownButtonFormField<int>(
+                              value: _policy!.resetMonth,
+                              decoration: const InputDecoration(
+                                labelText: 'Mesec',
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 8),
+                              ),
+                              items: List.generate(
+                                12,
+                                (i) => DropdownMenuItem(
+                                  value: i + 1,
+                                  child: Text(_monthNames[i]),
+                                ),
+                              ),
+                              onChanged: (month) {
+                                if (month != null) {
+                                  // Ako je trenutni dan veći od broja dana
+                                  // u novom mesecu, spusti na poslednji
+                                  // validan dan tog meseca.
+                                  final maxDay = _daysInMonth(month);
+                                  final newDay = _policy!.resetDay > maxDay
+                                      ? maxDay
+                                      : _policy!.resetDay;
+                                  _updateResetDate(month, newDay);
+                                }
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
                     Text('Tipovi odmora',
                         style: theme.textTheme.headlineMedium),
                     const SizedBox(height: 12),
@@ -201,14 +306,13 @@ class _LeavePolicyScreenState extends State<LeavePolicyScreen> {
                     ..._policy!.leaveTypes.asMap().entries.map((entry) {
                       final index = entry.key;
                       final type = entry.value;
-                      final isStandard = ['vacation', 'sick', 'slava']
-                          .contains(type.id);
+                      final isStandard =
+                          ['vacation', 'sick', 'slava'].contains(type.id);
 
                       return _LeaveTypeCard(
                         leaveType: type,
                         isStandard: isStandard,
-                        onUpdate: (updated) =>
-                            _updateLeaveType(index, updated),
+                        onUpdate: (updated) => _updateLeaveType(index, updated),
                         onDelete: () => _removeLeaveType(index),
                       );
                     }),
@@ -230,6 +334,7 @@ class _LeavePolicyScreenState extends State<LeavePolicyScreen> {
 }
 
 // ─── Leave Type Card ──────────────────────────────────────────────────────────
+
 class _LeaveTypeCard extends StatefulWidget {
   final LeaveType leaveType;
   final bool isStandard;
@@ -256,8 +361,7 @@ class _LeaveTypeCardState extends State<_LeaveTypeCard> {
   @override
   void initState() {
     super.initState();
-    _nameController =
-        TextEditingController(text: widget.leaveType.name);
+    _nameController = TextEditingController(text: widget.leaveType.name);
     _days = widget.leaveType.daysPerYear;
     _carriesOver = widget.leaveType.carriesOver;
     _requiresApproval = widget.leaveType.requiresApproval;
@@ -280,10 +384,14 @@ class _LeaveTypeCardState extends State<_LeaveTypeCard> {
 
   Color get _typeColor {
     switch (widget.leaveType.id) {
-      case 'vacation': return AppColors.primary;
-      case 'sick': return AppColors.warning;
-      case 'slava': return AppColors.adminColor;
-      default: return AppColors.success;
+      case 'vacation':
+        return AppColors.primary;
+      case 'sick':
+        return AppColors.warning;
+      case 'slava':
+        return AppColors.adminColor;
+      default:
+        return AppColors.success;
     }
   }
 
@@ -310,14 +418,14 @@ class _LeaveTypeCardState extends State<_LeaveTypeCard> {
           Row(
             children: [
               Container(
-                width: 10, height: 10,
+                width: 10,
+                height: 10,
                 decoration: BoxDecoration(
                   color: _typeColor,
                   shape: BoxShape.circle,
                 ),
               ),
               const SizedBox(width: 8),
-
               // Naziv
               Expanded(
                 child: widget.isStandard
@@ -330,14 +438,13 @@ class _LeaveTypeCardState extends State<_LeaveTypeCard> {
                             ?.copyWith(color: _typeColor),
                         decoration: const InputDecoration(
                           isDense: true,
-                          contentPadding: EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 6),
+                          contentPadding:
+                              EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                           border: OutlineInputBorder(),
                         ),
                         onChanged: (_) => _notifyUpdate(),
                       ),
               ),
-
               if (!widget.isStandard)
                 IconButton(
                   icon: const Icon(Icons.delete_outline_rounded,
@@ -354,8 +461,7 @@ class _LeaveTypeCardState extends State<_LeaveTypeCard> {
           // Dana po godini
           Row(
             children: [
-              Text('Dana godišnje:',
-                  style: theme.textTheme.bodyMedium),
+              Text('Dana godišnje:', style: theme.textTheme.bodyMedium),
               const Spacer(),
               IconButton(
                 icon: const Icon(Icons.remove_rounded, size: 18),
@@ -366,8 +472,7 @@ class _LeaveTypeCardState extends State<_LeaveTypeCard> {
                       }
                     : null,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(
-                    minWidth: 32, minHeight: 32),
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                 color: AppColors.primary,
               ),
               Container(
@@ -386,8 +491,7 @@ class _LeaveTypeCardState extends State<_LeaveTypeCard> {
                   _notifyUpdate();
                 },
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(
-                    minWidth: 32, minHeight: 32),
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                 color: AppColors.primary,
               ),
             ],
@@ -435,8 +539,7 @@ class _SwitchRow extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: Text(label,
-              style: Theme.of(context).textTheme.bodyMedium),
+          child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
         ),
         Switch(
           value: value,

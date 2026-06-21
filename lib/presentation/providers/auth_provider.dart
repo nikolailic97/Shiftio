@@ -22,6 +22,7 @@ class AuthProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   bool get rememberMe => _rememberMe;
   String get savedEmail => _savedEmail;
+
   bool get isLoading => _status == AuthStatus.loading;
   bool get isAuthenticated => _status == AuthStatus.authenticated;
 
@@ -57,6 +58,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // ─── LOGIN ──────────────────────────────────────────────────────────────────
+
   Future<bool> login({
     required String email,
     required String password,
@@ -87,6 +89,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // ─── BIOMETRIC ──────────────────────────────────────────────────────────────
+
   Future<bool> loginWithBiometrics() async {
     final success = await _authService.authenticateWithBiometrics();
     if (success && _savedEmail.isNotEmpty) {
@@ -97,6 +100,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // ─── REGISTER EMPLOYER ──────────────────────────────────────────────────────
+
   Future<bool> registerEmployer({
     required String name,
     required String surname,
@@ -128,11 +132,13 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // ─── VALIDATE COMPANY CODE ──────────────────────────────────────────────────
+
   Future<CompanyModel?> validateCompanyCode(String code) async {
     return await _authService.validateCompanyCode(code);
   }
 
   // ─── REGISTER WORKER ────────────────────────────────────────────────────────
+
   Future<bool> registerWorker({
     required String name,
     required String surname,
@@ -164,6 +170,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // ─── LOGOUT ─────────────────────────────────────────────────────────────────
+
   Future<void> logout() async {
     await _authService.logout();
     _currentUser = null;
@@ -173,6 +180,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // ─── RESET PASSWORD ─────────────────────────────────────────────────────────
+
   Future<bool> sendPasswordReset(String email) async {
     try {
       await _authService.sendPasswordResetEmail(email);
@@ -183,7 +191,21 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  // ─── REFRESH ────────────────────────────────────────────────────────────────
+
+  /// Ponovo učitaj trenutnog korisnika iz Firestore-a (npr. posle izmene
+  /// profilne slike ili drugih polja koje listener za auth state ne hvata
+  /// jer se Firebase Auth state nije promenio, samo Firestore dokument).
+  Future<void> refreshCurrentUser() async {
+    final userModel = await _authService.getCurrentUserModel();
+    if (userModel != null) {
+      _currentUser = userModel;
+      notifyListeners();
+    }
+  }
+
   // ─── HELPERS ────────────────────────────────────────────────────────────────
+
   void _setLoading() {
     _status = AuthStatus.loading;
     _errorMessage = null;

@@ -7,7 +7,6 @@ import 'core/theme/app_theme.dart';
 import 'data/services/notification_service.dart';
 import 'data/services/offline_cache_service.dart';
 import 'data/services/connectivity_service.dart';
-import 'data/services/revenuecat_service.dart';
 import 'presentation/providers/auth_provider.dart';
 import 'presentation/screens/shared/splash_screen.dart';
 
