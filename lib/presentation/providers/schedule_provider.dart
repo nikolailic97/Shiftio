@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shiftio/data/models/shift_model.dart';
 import 'package:shiftio/data/models/user_model.dart';
 import 'package:shiftio/data/services/firestore_service.dart';
@@ -200,7 +201,7 @@ class ScheduleProvider extends ChangeNotifier {
     });
   }
 
-  // ─── CREATE / DELETE / COMMENT ────────────────────────────────────────────────
+  // ─── CREATE / UPDATE / DELETE / COMMENT ───────────────────────────────────────
 
   Future<bool> createShift({
     required String companyId,
@@ -235,6 +236,39 @@ class ScheduleProvider extends ChangeNotifier {
       return true;
     } catch (e) {
       _errorMessage = 'Greška pri brisanju smene';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Izmeni postojeću smenu — vreme, trajanje i/ili dodeljeni radnik.
+  /// Prosledi samo polja koja se zaista menjaju; ostala se ne diraju.
+  /// Koristi se kad admin npr. promeni vreme termina ili zameni radnika
+  /// koji je otkazao (umesto brisanja i kreiranja nove smene).
+  Future<bool> updateShiftDetails({
+    required String shiftId,
+    DateTime? startTime,
+    int? durationMinutes,
+    String? workerId,
+  }) async {
+    try {
+      final data = <String, dynamic>{};
+      if (startTime != null) {
+        data['start_time'] = Timestamp.fromDate(startTime);
+      }
+      if (durationMinutes != null) {
+        data['duration_minutes'] = durationMinutes;
+      }
+      if (workerId != null) {
+        data['worker_id'] = workerId;
+      }
+
+      if (data.isEmpty) return true;
+
+      await _firestoreService.updateShift(shiftId, data);
+      return true;
+    } catch (e) {
+      _errorMessage = 'Greška pri izmeni smene';
       notifyListeners();
       return false;
     }

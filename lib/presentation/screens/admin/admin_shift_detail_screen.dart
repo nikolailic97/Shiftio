@@ -6,6 +6,7 @@ import '../../../data/models/shift_model.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/services/firestore_service.dart';
 import '../../providers/schedule_provider.dart';
+import '../../widgets/schedule/shift_time_picker.dart';
 
 class AdminShiftDetailScreen extends StatefulWidget {
   final ShiftModel shift;
@@ -27,16 +28,112 @@ class _AdminShiftDetailScreenState extends State<AdminShiftDetailScreen> {
   bool _isSavingNote = false;
   final FirestoreService _firestoreService = FirestoreService();
 
+  // ─── Edit vremena/trajanja/radnika ─────────────────────────────────────────
+  bool _isEditingShift = false;
+  bool _isSavingShift = false;
+  late TimeOfDay _editStartTime;
+  late int _editDurationMinutes;
+  late String _editWorkerId;
+
   @override
   void initState() {
     super.initState();
     _noteController.text = widget.shift.noteAdmin ?? '';
+    _resetEditFields();
+  }
+
+  void _resetEditFields() {
+    _editStartTime = TimeOfDay(
+      hour: widget.shift.startTime.hour,
+      minute: widget.shift.startTime.minute,
+    );
+    _editDurationMinutes = widget.shift.durationMinutes;
+    _editWorkerId = widget.shift.workerId;
   }
 
   @override
   void dispose() {
     _noteController.dispose();
     super.dispose();
+  }
+
+  int get _editDurationHours => _editDurationMinutes ~/ 60;
+  int get _editDurationMins => _editDurationMinutes % 60;
+
+  TimeOfDay get _editEndTime {
+    final startMins = _editStartTime.hour * 60 + _editStartTime.minute;
+    final endMins = startMins + _editDurationMinutes;
+    return TimeOfDay(hour: (endMins ~/ 60) % 24, minute: endMins % 60);
+  }
+
+  String _fmtTime(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  String get _editDurationLabel {
+    if (_editDurationHours == 0) return '${_editDurationMins}min';
+    if (_editDurationMins == 0) return '${_editDurationHours}h';
+    return '${_editDurationHours}h ${_editDurationMins}min';
+  }
+
+  bool get _hasShiftChanges {
+    final originalStart = TimeOfDay(
+      hour: widget.shift.startTime.hour,
+      minute: widget.shift.startTime.minute,
+    );
+    return _editStartTime != originalStart ||
+        _editDurationMinutes != widget.shift.durationMinutes ||
+        _editWorkerId != widget.shift.workerId;
+  }
+
+  Future<void> _saveShiftChanges() async {
+    if (_editDurationMinutes == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Trajanje smene mora biti veće od 0'),
+        backgroundColor: AppColors.error,
+      ));
+      return;
+    }
+
+    setState(() => _isSavingShift = true);
+
+    final newStartTime = DateTime(
+      widget.shift.date.year,
+      widget.shift.date.month,
+      widget.shift.date.day,
+      _editStartTime.hour,
+      _editStartTime.minute,
+    );
+
+    final success = await context.read<ScheduleProvider>().updateShiftDetails(
+          shiftId: widget.shift.shiftId,
+          startTime: newStartTime,
+          durationMinutes: _editDurationMinutes,
+          workerId:
+              _editWorkerId != widget.shift.workerId ? _editWorkerId : null,
+        );
+
+    if (mounted) {
+      setState(() {
+        _isSavingShift = false;
+        if (success) _isEditingShift = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text(success ? 'Smena je ažurirana' : 'Greška pri izmeni smene'),
+          backgroundColor: success ? AppColors.success : AppColors.error,
+        ),
+      );
+
+      if (success) {
+        // Smena se osvežava preko stream-a u ScheduleProvider, ali
+        // lokalno polje 'widget.shift' ostaje staro u ovoj instanci
+        // ekrana — vraćamo se nazad da admin vidi ažurirano stanje na
+        // listi, umesto da ručno sinhronizujemo immutable model ovde.
+        Navigator.pop(context);
+      }
+    }
   }
 
   Future<void> _saveNote() async {
@@ -104,6 +201,7 @@ class _AdminShiftDetailScreenState extends State<AdminShiftDetailScreen> {
     final shift = widget.shift;
     final worker = widget.worker;
     final fmt = DateFormat('dd.MM.yyyy');
+    final team = context.watch<ScheduleProvider>().teamMembers;
 
     final avatarColor = worker != null
         ? AppColors.avatarColors[
@@ -129,47 +227,232 @@ class _AdminShiftDetailScreenState extends State<AdminShiftDetailScreen> {
         padding: const EdgeInsets.all(20),
         children: [
           // ─── Vreme smene ──────────────────────────────────────────────────
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [AppColors.primary, AppColors.primaryDark],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primary.withOpacity(0.3),
-                  blurRadius: 16,
-                  offset: const Offset(0, 6),
+          if (!_isEditingShift)
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [AppColors.primary, AppColors.primaryDark],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  shift.timeRangeFormatted,
-                  style: theme.textTheme.displayMedium
-                      ?.copyWith(color: Colors.white),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${shift.durationFormatted} • ${fmt.format(shift.date)}',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.8),
-                    fontSize: 14,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primary.withOpacity(0.3),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
                   ),
-                ),
-              ],
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          shift.timeRangeFormatted,
+                          style: theme.textTheme.displayMedium
+                              ?.copyWith(color: Colors.white),
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () {
+                          _resetEditFields();
+                          setState(() => _isEditingShift = true);
+                        },
+                        icon: const Icon(Icons.edit_rounded,
+                            size: 16, color: Colors.white),
+                        label: const Text('Uredi',
+                            style: TextStyle(color: Colors.white)),
+                        style: TextButton.styleFrom(
+                          backgroundColor: Colors.white.withOpacity(0.15),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${shift.durationFormatted} • ${fmt.format(shift.date)}',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.8),
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.cardDark : AppColors.cardLight,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text('Uredi smenu',
+                            style: theme.textTheme.headlineSmall),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _isEditingShift = false;
+                            _resetEditFields();
+                          });
+                        },
+                        child: const Text('Otkaži'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  Text('Početak smene', style: theme.textTheme.titleLarge),
+                  const SizedBox(height: 10),
+                  ShiftioTimePicker(
+                    initialTime: _editStartTime,
+                    onTimeChanged: (t) => setState(() => _editStartTime = t),
+                  ),
+                  const SizedBox(height: 20),
+
+                  Text('Trajanje', style: theme.textTheme.titleLarge),
+                  const SizedBox(height: 10),
+                  ShiftioDurationPicker(
+                    initialHours: _editDurationHours,
+                    initialMinutes: _editDurationMins,
+                    onDurationChanged: (mins) =>
+                        setState(() => _editDurationMinutes = mins),
+                  ),
+                  const SizedBox(height: 12),
+
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.access_time_rounded,
+                            color: AppColors.primary, size: 18),
+                        const SizedBox(width: 10),
+                        Text('Kraj smene: ', style: theme.textTheme.bodyMedium),
+                        Text(_fmtTime(_editEndTime),
+                            style: theme.textTheme.titleLarge
+                                ?.copyWith(color: AppColors.primary)),
+                        Text(' (+$_editDurationLabel)',
+                            style: theme.textTheme.bodySmall),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // ─── Zamena radnika ──────────────────────────────────────
+                  Text('Radnik', style: theme.textTheme.titleLarge),
+                  const SizedBox(height: 10),
+                  if (team.isEmpty)
+                    Text('Nema radnika u firmi',
+                        style: theme.textTheme.bodyMedium)
+                  else
+                    ...team.map((member) {
+                      final isSelected = _editWorkerId == member.uid;
+                      final color = AppColors.avatarColors[
+                          member.uid.hashCode.abs() %
+                              AppColors.avatarColors.length];
+
+                      return GestureDetector(
+                        onTap: () => setState(() => _editWorkerId = member.uid),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? AppColors.primary.withOpacity(0.08)
+                                : isDark
+                                    ? AppColors.backgroundDark
+                                    : AppColors.backgroundLight,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isSelected
+                                  ? AppColors.primary
+                                  : Colors.transparent,
+                              width: 1.5,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                    color: color, shape: BoxShape.circle),
+                                child: Center(
+                                  child: Text(member.initials,
+                                      style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700)),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(member.fullName,
+                                    style: theme.textTheme.titleLarge),
+                              ),
+                              Icon(
+                                isSelected
+                                    ? Icons.radio_button_checked_rounded
+                                    : Icons.radio_button_unchecked_rounded,
+                                color: isSelected
+                                    ? AppColors.primary
+                                    : isDark
+                                        ? AppColors.textSecondaryDark
+                                        : AppColors.textSecondaryLight,
+                                size: 22,
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: (_isSavingShift || !_hasShiftChanges)
+                        ? null
+                        : _saveShiftChanges,
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 46),
+                    ),
+                    child: _isSavingShift
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                                color: Colors.white, strokeWidth: 2),
+                          )
+                        : const Text('Sačuvaj izmene'),
+                  ),
+                ],
+              ),
             ),
-          ),
 
           const SizedBox(height: 20),
 
-          // ─── Radnik ───────────────────────────────────────────────────────
-          if (worker != null) ...[
+          // ─── Radnik (prikaz, samo kad nismo u edit modu smene) ────────────
+          if (worker != null && !_isEditingShift) ...[
             Text('Radnik', style: theme.textTheme.headlineSmall),
             const SizedBox(height: 10),
             Container(
@@ -248,7 +531,6 @@ class _AdminShiftDetailScreenState extends State<AdminShiftDetailScreen> {
             ],
           ),
           const SizedBox(height: 10),
-
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
@@ -302,7 +584,6 @@ class _AdminShiftDetailScreenState extends State<AdminShiftDetailScreen> {
                         ],
                       ),
           ),
-
           const SizedBox(height: 20),
 
           // ─── Admin napomena ───────────────────────────────────────────────
@@ -334,7 +615,6 @@ class _AdminShiftDetailScreenState extends State<AdminShiftDetailScreen> {
             ],
           ),
           const SizedBox(height: 10),
-
           if (_isEditingNote) ...[
             TextField(
               controller: _noteController,

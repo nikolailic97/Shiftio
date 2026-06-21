@@ -5,7 +5,6 @@ import '../auth/login_screen.dart';
 import '../admin/admin_home_screen.dart';
 import '../worker/worker_home_screen.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../data/models/user_model.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -39,6 +38,7 @@ class _SplashScreenState extends State<SplashScreen>
 
   Future<void> _navigate() async {
     await Future.delayed(const Duration(milliseconds: 2000));
+
     if (!mounted) return;
 
     final authProvider = context.read<AuthProvider>();
@@ -91,25 +91,11 @@ class _SplashScreenState extends State<SplashScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Logo container
-                Container(
-                  width: 90,
-                  height: 90,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'S',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 52,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -2,
-                      ),
-                    ),
-                  ),
+                // Logo
+                Image.asset(
+                  'assets/icons/app_logo_transparent.png',
+                  width: 110,
+                  height: 110,
                 ),
                 const SizedBox(height: 20),
                 const Text(

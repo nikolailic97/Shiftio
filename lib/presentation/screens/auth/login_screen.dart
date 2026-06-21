@@ -20,7 +20,6 @@ class _LoginScreenState extends State<LoginScreen>
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-
   bool _obscurePassword = true;
   bool _rememberMe = false;
   bool _biometricAvailable = false;
@@ -32,7 +31,6 @@ class _LoginScreenState extends State<LoginScreen>
   @override
   void initState() {
     super.initState();
-
     _animController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 700),
@@ -44,7 +42,6 @@ class _LoginScreenState extends State<LoginScreen>
       begin: const Offset(0, 0.06),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _animController, curve: Curves.easeOut));
-
     _animController.forward();
     _loadSavedData();
   }
@@ -103,6 +100,7 @@ class _LoginScreenState extends State<LoginScreen>
     } else {
       destination = const WorkerHomeScreen();
     }
+
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => destination),
     );
@@ -186,31 +184,10 @@ class _LoginScreenState extends State<LoginScreen>
                   Center(
                     child: Column(
                       children: [
-                        Container(
-                          width: 72,
-                          height: 72,
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.primary.withOpacity(0.3),
-                                blurRadius: 20,
-                                offset: const Offset(0, 8),
-                              ),
-                            ],
-                          ),
-                          child: const Center(
-                            child: Text(
-                              'S',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 40,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: -1.5,
-                              ),
-                            ),
-                          ),
+                        Image.asset(
+                          'assets/icons/app_logo_transparent.png',
+                          width: 88,
+                          height: 88,
                         ),
                         const SizedBox(height: 16),
                         Text(
@@ -225,7 +202,6 @@ class _LoginScreenState extends State<LoginScreen>
                       ],
                     ),
                   ),
-
                   const SizedBox(height: 40),
 
                   // ─── Error Message ──────────────────────────────────────────
@@ -294,7 +270,6 @@ class _LoginScreenState extends State<LoginScreen>
                           },
                           onChanged: (_) => authProvider.clearError(),
                         ),
-
                         const SizedBox(height: 14),
 
                         // Password
@@ -337,7 +312,6 @@ class _LoginScreenState extends State<LoginScreen>
                       ],
                     ),
                   ),
-
                   const SizedBox(height: 12),
 
                   // ─── Remember Me + Forgot Password ──────────────────────────
@@ -384,7 +358,6 @@ class _LoginScreenState extends State<LoginScreen>
                       ),
                     ],
                   ),
-
                   const SizedBox(height: 28),
 
                   // ─── Login Button ───────────────────────────────────────────
@@ -401,7 +374,6 @@ class _LoginScreenState extends State<LoginScreen>
                           )
                         : const Text('Prijavi se'),
                   ),
-
                   const SizedBox(height: 14),
 
                   // ─── Biometric Button ───────────────────────────────────────
@@ -410,7 +382,6 @@ class _LoginScreenState extends State<LoginScreen>
                     icon: const Icon(Icons.fingerprint_rounded, size: 22),
                     label: const Text('Prijavi se biometrijom'),
                   ),
-
                   const SizedBox(height: 40),
 
                   // ─── Divider ────────────────────────────────────────────────
@@ -427,7 +398,6 @@ class _LoginScreenState extends State<LoginScreen>
                       const Expanded(child: Divider()),
                     ],
                   ),
-
                   const SizedBox(height: 24),
 
                   // ─── Register Options ───────────────────────────────────────
@@ -450,7 +420,6 @@ class _LoginScreenState extends State<LoginScreen>
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 10),
 
                   // Registruj se kao radnik
@@ -479,6 +448,7 @@ class _LoginScreenState extends State<LoginScreen>
 }
 
 // ─── Register Card Widget ─────────────────────────────────────────────────────
+
 class _RegisterCard extends StatelessWidget {
   final IconData icon;
   final String title;
