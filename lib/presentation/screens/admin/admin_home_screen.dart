@@ -74,23 +74,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             automaticallyImplyLeading: false,
             title: Row(
               children: [
-                Container(
+                Image.asset(
+                  'assets/icons/app_logo_transparent.png',
                   width: 34,
                   height: 34,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'S',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(

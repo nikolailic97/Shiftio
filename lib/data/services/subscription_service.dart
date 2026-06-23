@@ -1,12 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:shiftio/data/models/subscription_model.dart';
+import '../models/subscription_model.dart';
 
 class SubscriptionService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  static const int gracePeriodDays = 7;
-
-  // ─── DOHVATI PRETPLATU ────────────────────────────────────────────────────────
+  // ─── DOHVATI PRETPLATU ────────────────────────────────────────────────────
 
   Stream<SubscriptionModel?> watchSubscription(String companyId) {
     return _db
@@ -31,7 +29,7 @@ class SubscriptionService {
     return SubscriptionModel.fromFirestore(snap.docs.first);
   }
 
-  // ─── KREIRAJ FREE TIER (za novu firmu) ───────────────────────────────────────
+  // ─── KREIRAJ FREE TIER (za novu firmu) ───────────────────────────────────
 
   Future<void> createFreeTier(String companyId) async {
     final existing = await getSubscription(companyId);
@@ -42,12 +40,13 @@ class SubscriptionService {
     await docRef.set({...sub.toFirestore(), 'subscription_id': docRef.id});
   }
 
-  // ─── PROVJERA LIMITA ──────────────────────────────────────────────────────────
+  // ─── PROVJERA LIMITA ──────────────────────────────────────────────────────
 
-  /// Može li admin dodati novog radnika
+  /// Može li admin dodati novog radnika (uzima u obzir seat addon-e)
   Future<LimitCheckResult> canAddWorker(String companyId) async {
     final sub = await getSubscription(companyId);
     final tier = sub?.effectiveTier ?? SubscriptionTier.free;
+    final totalLimit = sub?.totalWorkerLimit ?? tier.baseWorkerLimit;
 
     final workersSnap = await _db
         .collection('users')
@@ -56,97 +55,31 @@ class SubscriptionService {
         .get();
 
     final currentCount = workersSnap.size;
-    final maxAllowed = tier.maxWorkers;
 
-    if (currentCount >= maxAllowed) {
+    if (currentCount >= totalLimit) {
+      final canBuySeatAddons = tier.canUseSeatAddons;
       return LimitCheckResult(
         allowed: false,
         currentCount: currentCount,
-        maxCount: maxAllowed,
+        maxCount: totalLimit,
         tier: tier,
-        message:
-            'Dostigli ste limit od $maxAllowed radnika za ${tier.label} plan.',
+        requiresUpgrade: !canBuySeatAddons,
+        requiresSeatAddon: canBuySeatAddons,
+        message: canBuySeatAddons
+            ? 'Dostigli ste limit od $totalLimit radnika. Kupite seat addon da dodate više.'
+            : 'Dostigli ste limit od $totalLimit radnika za Free plan. Nadogradite na Standard.',
       );
     }
 
     return LimitCheckResult(
       allowed: true,
       currentCount: currentCount,
-      maxCount: maxAllowed,
+      maxCount: totalLimit,
       tier: tier,
     );
   }
 
-  /// Može li admin slati notifikacije
-  Future<LimitCheckResult> canSendNotification(String companyId) async {
-    final sub = await getSubscription(companyId);
-    if (sub == null) {
-      return LimitCheckResult(
-        allowed: false,
-        currentCount: 0,
-        maxCount: 0,
-        tier: SubscriptionTier.free,
-        message: 'Pretplata nije pronađena.',
-      );
-    }
-
-    final tier = sub.effectiveTier;
-    final remaining = sub.remainingDailyNotifications;
-
-    if (remaining <= 0) {
-      return LimitCheckResult(
-        allowed: false,
-        currentCount: sub.dailyNotificationCount,
-        maxCount: tier.maxDailyNotifications,
-        tier: tier,
-        message:
-            'Dostigli ste dnevni limit od ${tier.maxDailyNotifications} notifikacija.',
-      );
-    }
-
-    return LimitCheckResult(
-      allowed: true,
-      currentCount: sub.dailyNotificationCount,
-      maxCount: tier.maxDailyNotifications,
-      tier: tier,
-    );
-  }
-
-  /// Može li admin kreirati novu smenu (Soft Lock provjera)
-  Future<LimitCheckResult> canCreateShift(String companyId) async {
-    final sub = await getSubscription(companyId);
-    final tier = sub?.effectiveTier ?? SubscriptionTier.free;
-
-    // Soft Lock: ako je expired i ima više radnika nego što Free dozvoljava
-    if (sub != null && sub.isExpired) {
-      final workersSnap = await _db
-          .collection('users')
-          .where('current_company_id', isEqualTo: companyId)
-          .where('active_status', isEqualTo: true)
-          .get();
-
-      if (workersSnap.size > SubscriptionTier.free.maxWorkers) {
-        return LimitCheckResult(
-          allowed: false,
-          currentCount: workersSnap.size,
-          maxCount: SubscriptionTier.free.maxWorkers,
-          tier: tier,
-          isSoftLocked: true,
-          message:
-              'Planer je zaključan. Obnovi pretplatu ili ukloni radnike na limit Free plana (${SubscriptionTier.free.maxWorkers}).',
-        );
-      }
-    }
-
-    return LimitCheckResult(
-      allowed: true,
-      currentCount: 0,
-      maxCount: 0,
-      tier: tier,
-    );
-  }
-
-  /// Može li admin exportovati podatke
+  /// Može li admin koristiti export
   Future<LimitCheckResult> canExport(String companyId) async {
     final sub = await getSubscription(companyId);
     final tier = sub?.effectiveTier ?? SubscriptionTier.free;
@@ -157,6 +90,7 @@ class SubscriptionService {
         currentCount: 0,
         maxCount: 0,
         tier: tier,
+        requiresUpgrade: true,
         message: 'Export podataka nije dostupan na Free planu.',
       );
     }
@@ -169,39 +103,75 @@ class SubscriptionService {
     );
   }
 
-  // ─── POVEĆAJ BROJ NOTIFIKACIJA ────────────────────────────────────────────────
+  /// Može li admin pristupiti Pro dashboard-u
+  Future<LimitCheckResult> canUseDashboard(String companyId) async {
+    final sub = await getSubscription(companyId);
+    final tier = sub?.effectiveTier ?? SubscriptionTier.free;
 
-  Future<void> incrementNotificationCount(String companyId, int count) async {
-    final snap = await _db
-        .collection('subscriptions')
-        .where('company_id', isEqualTo: companyId)
-        .limit(1)
-        .get();
+    if (!tier.canUseDashboard) {
+      return LimitCheckResult(
+        allowed: false,
+        currentCount: 0,
+        maxCount: 0,
+        tier: tier,
+        requiresUpgrade: true,
+        message: 'Dashboard statistike su dostupne samo na Pro planu.',
+      );
+    }
 
-    if (snap.docs.isEmpty) return;
-
-    await snap.docs.first.reference.update({
-      'daily_notification_count': FieldValue.increment(count),
-    });
+    return LimitCheckResult(
+      allowed: true,
+      currentCount: 0,
+      maxCount: 0,
+      tier: tier,
+    );
   }
 
-  // ─── SOFT LOCK — zaključaj poslednjeg radnika ─────────────────────────────────
+  /// Može li admin koristiti napredne izveštaje
+  Future<LimitCheckResult> canUseAdvancedReports(String companyId) async {
+    final sub = await getSubscription(companyId);
+    final tier = sub?.effectiveTier ?? SubscriptionTier.free;
 
-  /// Kada pretplata istekne i firma ima više radnika od Free limita,
-  /// poslednji dodani radnik se zaključava
+    if (!tier.canUseAdvancedReports) {
+      return LimitCheckResult(
+        allowed: false,
+        currentCount: 0,
+        maxCount: 0,
+        tier: tier,
+        requiresUpgrade: true,
+        message: 'Napredni izveštaji su dostupni samo na Pro planu.',
+      );
+    }
+
+    return LimitCheckResult(
+      allowed: true,
+      currentCount: 0,
+      maxCount: 0,
+      tier: tier,
+    );
+  }
+
+  // ─── SOFT LOCK — LIFO kad pretplata istekne ───────────────────────────────
+
+  /// Kada pretplata istekne, zaključava radnike koji su iznad
+  /// novog efektivnog limita (LIFO — zadnji dodani gube pristup prvi).
   Future<void> applyWorkerSoftLock(String companyId) async {
+    final sub = await getSubscription(companyId);
+    final effectiveLimit = sub?.effectiveTier.baseWorkerLimit ??
+        SubscriptionTier.free.baseWorkerLimit;
+
     final workersSnap = await _db
         .collection('users')
         .where('current_company_id', isEqualTo: companyId)
         .where('active_status', isEqualTo: true)
+        .where('soft_locked', isEqualTo: false)
         .orderBy('created_at', descending: true)
         .get();
 
-    final maxWorkers = SubscriptionTier.free.maxWorkers;
-    if (workersSnap.size <= maxWorkers) return;
+    if (workersSnap.size <= effectiveLimit) return;
 
-    // Zaključaj poslednje dodane radnike koji su preko limita
-    final toBlock = workersSnap.docs.take(workersSnap.size - maxWorkers);
+    // Zaključaj poslednje dodane koji su iznad limita (LIFO)
+    final toBlock = workersSnap.docs.take(workersSnap.size - effectiveLimit);
     final batch = _db.batch();
     for (final doc in toBlock) {
       batch.update(doc.reference, {'soft_locked': true});
@@ -209,9 +179,15 @@ class SubscriptionService {
     await batch.commit();
   }
 
-  // ─── GRACE PERIOD ─────────────────────────────────────────────────────────────
+  // ─── SEAT ADDON-I ─────────────────────────────────────────────────────────
 
-  Future<void> startGracePeriod(String companyId) async {
+  /// Dodaje seat addon nakon potvrde kupovine od RevenueCat-a.
+  /// U produkciji poziva Cloud Function webhook — ovde simuliramo direktno.
+  Future<void> addSeatAddon({
+    required String companyId,
+    required String productId,
+    required int seats,
+  }) async {
     final snap = await _db
         .collection('subscriptions')
         .where('company_id', isEqualTo: companyId)
@@ -220,16 +196,25 @@ class SubscriptionService {
 
     if (snap.docs.isEmpty) return;
 
-    final gracePeriodEnd =
-        DateTime.now().add(const Duration(days: gracePeriodDays));
+    final now = DateTime.now();
+    final addon = SeatAddon(
+      productId: productId,
+      seats: seats,
+      purchasedAt: now,
+      expiresAt: now.add(const Duration(days: 30)),
+      status: 'active',
+    );
+
+    final sub = SubscriptionModel.fromFirestore(snap.docs.first);
+    final updatedAddons = [...sub.seatAddons, addon];
 
     await snap.docs.first.reference.update({
-      'status': SubscriptionStatus.gracePeriod.value,
-      'grace_period_end': Timestamp.fromDate(gracePeriodEnd),
+      'seat_addons': updatedAddons.map((a) => a.toMap()).toList(),
     });
   }
 
-  Future<void> expireSubscription(String companyId) async {
+  /// Ukloni istekle seat addon-e i primeni LIFO lock ako treba
+  Future<void> cleanupExpiredAddons(String companyId) async {
     final snap = await _db
         .collection('subscriptions')
         .where('company_id', isEqualTo: companyId)
@@ -238,17 +223,23 @@ class SubscriptionService {
 
     if (snap.docs.isEmpty) return;
 
-    await snap.docs.first.reference.update({
-      'status': SubscriptionStatus.expired.value,
-      'tier': SubscriptionTier.free.value,
-    });
+    final sub = SubscriptionModel.fromFirestore(snap.docs.first);
+    final activeAddons = sub.activeSeatAddons;
 
-    // Primijeni Soft Lock
-    await applyWorkerSoftLock(companyId);
+    // Ažuriraj Firestore samo ako ima nešto za ukloniti
+    if (activeAddons.length != sub.seatAddons.length) {
+      await snap.docs.first.reference.update({
+        'seat_addons': activeAddons.map((a) => a.toMap()).toList(),
+      });
+
+      // Primeni LIFO lock za radnike koji su sad iznad novog limita
+      await applyWorkerSoftLock(companyId);
+    }
   }
 
-  // ─── OBNOVI PRETPLATU (simulacija — RevenueCat webhook) ──────────────────────
+  // ─── OBNOVI / PROMENI PLAN ────────────────────────────────────────────────
 
+  /// Obnovi pretplatu (poziva se iz RevenueCat webhook-a ili simulacije)
   Future<void> renewSubscription({
     required String companyId,
     required SubscriptionTier tier,
@@ -269,14 +260,13 @@ class SubscriptionService {
       'status': SubscriptionStatus.active.value,
       'cycle': cycle.value,
       'end_date': Timestamp.fromDate(endDate),
-      'grace_period_end': null,
     };
 
     if (snap.docs.isEmpty) {
       final docRef = _db.collection('subscriptions').doc();
       await docRef.set({
         'company_id': companyId,
-        'daily_notification_count': 0,
+        'seat_addons': [],
         'created_at': Timestamp.fromDate(DateTime.now()),
         ...data,
       });
@@ -284,35 +274,58 @@ class SubscriptionService {
       await snap.docs.first.reference.update(data);
     }
 
-    // Otključaj soft-locked radnike
-    await _unlockWorkers(companyId, tier.maxWorkers);
+    // Otključaj soft-locked radnike do novog limita
+    await _unlockWorkers(companyId, tier.baseWorkerLimit);
   }
 
-  Future<void> _unlockWorkers(String companyId, int maxWorkers) async {
+  Future<void> expireSubscription(String companyId) async {
+    final snap = await _db
+        .collection('subscriptions')
+        .where('company_id', isEqualTo: companyId)
+        .limit(1)
+        .get();
+
+    if (snap.docs.isEmpty) return;
+
+    await snap.docs.first.reference.update({
+      'status': SubscriptionStatus.expired.value,
+      'tier': SubscriptionTier.free.value,
+      'seat_addons': [],
+    });
+
+    await applyWorkerSoftLock(companyId);
+  }
+
+  Future<void> _unlockWorkers(String companyId, int upToLimit) async {
     final snap = await _db
         .collection('users')
         .where('current_company_id', isEqualTo: companyId)
         .where('soft_locked', isEqualTo: true)
+        .orderBy('created_at', descending: false)
         .get();
+
+    if (snap.docs.isEmpty) return;
 
     final batch = _db.batch();
     int unlocked = 0;
     for (final doc in snap.docs) {
-      if (unlocked < maxWorkers) {
-        batch.update(doc.reference, {'soft_locked': false});
-        unlocked++;
-      }
+      if (unlocked >= upToLimit) break;
+      batch.update(doc.reference, {'soft_locked': false});
+      unlocked++;
     }
     await batch.commit();
   }
 }
 
-// ─── Rezultat provjere limita ─────────────────────────────────────────────────
+// ─── LIMIT CHECK RESULT ───────────────────────────────────────────────────────
+
 class LimitCheckResult {
   final bool allowed;
   final int currentCount;
   final int maxCount;
   final SubscriptionTier tier;
+  final bool requiresUpgrade;
+  final bool requiresSeatAddon;
   final bool isSoftLocked;
   final String? message;
 
@@ -321,6 +334,8 @@ class LimitCheckResult {
     required this.currentCount,
     required this.maxCount,
     required this.tier,
+    this.requiresUpgrade = false,
+    this.requiresSeatAddon = false,
     this.isSoftLocked = false,
     this.message,
   });
