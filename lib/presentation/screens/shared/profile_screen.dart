@@ -2,13 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../data/models/subscription_model.dart';
 import '../../../data/models/user_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/company_provider.dart';
 import '../../providers/request_provider.dart';
+import '../../providers/subscription_provider.dart';
+import '../../widgets/common/upgrade_prompt_widget.dart';
 import '../auth/login_screen.dart';
 import '../admin/export_screen.dart';
 import '../admin/leave_policy_screen.dart';
+import '../admin/subscription_screen.dart';
+import '../admin/dashboard_screen.dart';
 import '../../../main.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -299,28 +304,91 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              _SettingsTile(
-                icon: Icons.download_rounded,
-                label: 'Export podataka',
-                subtitle: 'Excel / CSV izvještaj o radu',
-                onTap: () {
-                  try {
+              // Dashboard — samo Pro
+              Builder(builder: (ctx) {
+                final canDash =
+                    ctx.watch<SubscriptionProvider>().canUseDashboard;
+                return _SettingsTile(
+                  icon: Icons.bar_chart_rounded,
+                  label: 'Dashboard',
+                  subtitle: canDash
+                      ? 'Statistike firme i prekovremeni rad'
+                      : 'Dostupno na Pro planu',
+                  locked: !canDash,
+                  onTap: () {
+                    if (!canDash) {
+                      UpgradePromptWidget.show(
+                        context,
+                        requiredTier: SubscriptionTier.pro,
+                        featureName: 'Dashboard statistike',
+                        featureIcon: Icons.bar_chart_rounded,
+                      );
+                      return;
+                    }
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => MultiProvider(
-                          providers: [
-                            ChangeNotifierProvider.value(
-                                value: context.read<AuthProvider>()),
-                            ChangeNotifierProvider.value(
-                                value: context.read<CompanyProvider>()),
-                          ],
-                          child: const ExportScreen(),
+                        builder: (_) => ChangeNotifierProvider.value(
+                          value: ctx.read<SubscriptionProvider>(),
+                          child: const DashboardScreen(),
                         ),
                       ),
                     );
-                  } catch (_) {}
-                },
+                  },
+                );
+              }),
+              const SizedBox(height: 8),
+              // Export — Standard i Pro
+              Builder(builder: (ctx) {
+                final canExp = ctx.watch<SubscriptionProvider>().canExport;
+                return _SettingsTile(
+                  icon: Icons.download_rounded,
+                  label: 'Export podataka',
+                  subtitle: canExp
+                      ? 'Excel / CSV izveštaj o radu'
+                      : 'Dostupno na Standard i Pro planu',
+                  locked: !canExp,
+                  onTap: () {
+                    if (!canExp) {
+                      UpgradePromptWidget.show(
+                        context,
+                        requiredTier: SubscriptionTier.standard,
+                        featureName: 'Export podataka',
+                        featureIcon: Icons.download_rounded,
+                      );
+                      return;
+                    }
+                    try {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => MultiProvider(
+                            providers: [
+                              ChangeNotifierProvider.value(
+                                  value: ctx.read<AuthProvider>()),
+                              ChangeNotifierProvider.value(
+                                  value: ctx.read<CompanyProvider>()),
+                            ],
+                            child: const ExportScreen(),
+                          ),
+                        ),
+                      );
+                    } catch (_) {}
+                  },
+                );
+              }),
+              const SizedBox(height: 8),
+              // Moja pretplata
+              _SettingsTile(
+                icon: Icons.workspace_premium_rounded,
+                label: 'Moja pretplata',
+                subtitle: 'Upravljaj planom i seat addon-ima',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const SubscriptionScreen(),
+                  ),
+                ),
               ),
               const SizedBox(height: 24),
             ],
@@ -446,6 +514,7 @@ class _SettingsTile extends StatelessWidget {
   final String? subtitle;
   final Widget? trailing;
   final VoidCallback? onTap;
+  final bool locked;
 
   const _SettingsTile({
     required this.icon,
@@ -453,6 +522,7 @@ class _SettingsTile extends StatelessWidget {
     this.subtitle,
     this.trailing,
     this.onTap,
+    this.locked = false,
   });
 
   @override
@@ -490,15 +560,21 @@ class _SettingsTile extends StatelessWidget {
                 ),
               ),
               trailing ??
-                  (onTap != null
-                      ? Icon(
-                          Icons.arrow_forward_ios_rounded,
-                          size: 14,
-                          color: isDark
-                              ? AppColors.textSecondaryDark
-                              : AppColors.textSecondaryLight,
+                  (locked
+                      ? const Icon(
+                          Icons.lock_outline_rounded,
+                          size: 16,
+                          color: AppColors.textSecondaryLight,
                         )
-                      : const SizedBox.shrink()),
+                      : onTap != null
+                          ? Icon(
+                              Icons.arrow_forward_ios_rounded,
+                              size: 14,
+                              color: isDark
+                                  ? AppColors.textSecondaryDark
+                                  : AppColors.textSecondaryLight,
+                            )
+                          : const SizedBox.shrink()),
             ],
           ),
         ),

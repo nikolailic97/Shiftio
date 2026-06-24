@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../data/models/subscription_model.dart';
 import '../../providers/subscription_provider.dart';
 import '../../screens/admin/subscription_screen.dart';
 
