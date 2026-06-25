@@ -8,7 +8,6 @@ import '../../providers/schedule_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../widgets/schedule/day_picker_widget.dart';
 import '../../widgets/schedule/create_shift_sheet.dart';
-import '../../widgets/common/soft_lock_overlay.dart';
 import 'admin_shift_detail_screen.dart';
 
 class AdminScheduleScreen extends StatefulWidget {
@@ -34,17 +33,9 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
     final user = context.read<AuthProvider>().currentUser;
     if (user?.currentCompanyId == null) return;
 
-    // Provjeri Soft Lock
-    final subProvider = context.read<SubscriptionProvider>();
-    final check = await subProvider.canCreateShift(user!.currentCompanyId!);
-    if (!check.allowed && mounted) {
-      showDialog(
-        context: context,
-        builder: (_) => SoftLockOverlay(message: check.message ?? ''),
-      );
-      return;
-    }
-
+    // Kreiranje smena je dostupno na svim planovima — bez subscription provjere.
+    // Broj radnika koji se mogu DODATI u tim je ograničen po planu,
+    // ali kreiranje smena za već-dodane radnike nema limita.
     final scheduleProvider = context.read<ScheduleProvider>();
     await showModalBottomSheet(
       context: context,
@@ -132,7 +123,6 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
     final scheduleProvider = context.watch<ScheduleProvider>();
     final user = context.watch<AuthProvider>().currentUser;
 
-    // Grupiši smene po batch_id ili po shift_id ako nema batch
     final groupedShifts = _groupShifts(scheduleProvider.shiftsForDay);
 
     return Scaffold(
@@ -269,7 +259,7 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
         ),
       ),
 
-      // ─── FAB ─────────────────────────────────────────────────────────────────
+      // ─── FAB ─────────────────────────────────────────────────────────────
       floatingActionButton: FloatingActionButton(
         onPressed: _openCreateSheet,
         backgroundColor: AppColors.primary,
@@ -279,15 +269,12 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
     );
   }
 
-  /// Grupisanje smena po batchId (batch smene prikazujemo zajedno)
   List<Map<String, dynamic>> _groupShifts(List<ShiftModel> shifts) {
     final Map<String, List<ShiftModel>> groups = {};
-
     for (final shift in shifts) {
       final key = shift.batchId ?? shift.shiftId;
       groups.putIfAbsent(key, () => []).add(shift);
     }
-
     return groups.values.map((shifts) => {'shifts': shifts}).toList()
       ..sort((a, b) {
         final aShifts = a['shifts'] as List<ShiftModel>;
@@ -331,15 +318,14 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
 }
 
 // ─── Empty State ──────────────────────────────────────────────────────────────
+
 class _EmptySchedule extends StatelessWidget {
   final VoidCallback onAdd;
-
   const _EmptySchedule({required this.onAdd});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,

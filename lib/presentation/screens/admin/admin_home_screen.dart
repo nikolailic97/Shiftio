@@ -74,8 +74,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             automaticallyImplyLeading: false,
             title: Row(
               children: [
+                // Logo — zamenjen stari Container sa "S"
                 Image.asset(
-                  'assets/icons/app_logo_transparent.png',
+                  'assets/icons/app_logo_bg.png',
                   width: 34,
                   height: 34,
                 ),
@@ -91,7 +92,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       ),
                       if (user != null)
                         Text(
-                          user.fullName,
+                          // Prikaži rolu pored imena za managera
+                          user.isManager
+                              ? '${user.fullName} · Menadžer'
+                              : user.fullName,
                           style: theme.textTheme.bodySmall,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -140,7 +144,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                     width: 36,
                     height: 36,
                     decoration: BoxDecoration(
-                      color: AppColors.adminColor,
+                      color: user?.isManager == true
+                          ? AppColors.managerColor
+                          : AppColors.adminColor,
                       shape: BoxShape.circle,
                       border: Border.all(
                         color: AppColors.primary.withOpacity(0.3),
@@ -164,9 +170,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           ),
           body: Column(
             children: [
-              // Offline banner
               const OfflineBanner(),
-              // Subscription banner
               const SubscriptionBanner(),
               Expanded(
                 child: IndexedStack(
