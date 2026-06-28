@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shiftio/data/models/company_model.dart';
 import 'package:shiftio/data/models/user_model.dart';
 import 'package:shiftio/data/services/auth_service.dart';
+import 'package:shiftio/data/services/firestore_service.dart';
 import 'package:shiftio/data/services/revenuecat_service.dart';
 
 enum AuthStatus { initial, loading, authenticated, unauthenticated, error }
@@ -201,6 +202,16 @@ class AuthProvider extends ChangeNotifier {
     if (userModel != null) {
       _currentUser = userModel;
       notifyListeners();
+    }
+  }
+
+  /// Dohvati podatke o firmi (za Onboarding — invite code prikaz)
+  Future<dynamic> getCompany(String companyId) async {
+    try {
+      final FirestoreService fs = FirestoreService();
+      return await fs.getCompany(companyId);
+    } catch (_) {
+      return null;
     }
   }
 

@@ -44,9 +44,8 @@ class _DashboardData {
 
   double get totalHoursMonth => totalMinutesMonth / 60.0;
 
-  double get avgHoursPerWorker => activeWorkersCount > 0
-      ? totalHoursMonth / activeWorkersCount
-      : 0;
+  double get avgHoursPerWorker =>
+      activeWorkersCount > 0 ? totalHoursMonth / activeWorkersCount : 0;
 
   List<_WorkerStat> get top3Workers {
     final sorted = [...workerStats]
@@ -100,8 +99,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final monthEnd = DateTime(now.year, now.month + 1, 1);
 
       // Granice tekuće sedmice (pon–ned)
-      final weekStart = DateTime(
-          now.year, now.month, now.day - (now.weekday - 1));
+      final weekStart =
+          DateTime(now.year, now.month, now.day - (now.weekday - 1));
       final weekEnd = weekStart.add(const Duration(days: 7));
 
       // Dohvati sve radnike
@@ -115,9 +114,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           .where('date', isLessThan: Timestamp.fromDate(monthEnd))
           .get();
 
-      final monthShifts = monthShiftsSnap.docs
-          .map((d) => ShiftModel.fromFirestore(d))
-          .toList();
+      final monthShifts =
+          monthShiftsSnap.docs.map((d) => ShiftModel.fromFirestore(d)).toList();
 
       // Dohvati smene za tekuću sedmicu (za overtime tracking)
       final weekShiftsSnap = await _db
@@ -127,9 +125,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           .where('date', isLessThan: Timestamp.fromDate(weekEnd))
           .get();
 
-      final weekShifts = weekShiftsSnap.docs
-          .map((d) => ShiftModel.fromFirestore(d))
-          .toList();
+      final weekShifts =
+          weekShiftsSnap.docs.map((d) => ShiftModel.fromFirestore(d)).toList();
 
       // Agregiraj po radniku
       final workerStats = <_WorkerStat>[];
@@ -137,22 +134,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       for (final worker in workers) {
         // Mesečni sati
-        final workerMonthShifts = monthShifts
-            .where((s) => s.workerId == worker.uid)
-            .toList();
-        final monthMinutes = workerMonthShifts.fold<int>(
-            0, (sum, s) => sum + s.durationMinutes);
+        final workerMonthShifts =
+            monthShifts.where((s) => s.workerId == worker.uid).toList();
+        final monthMinutes =
+            workerMonthShifts.fold<int>(0, (sum, s) => sum + s.durationMinutes);
 
         // Sedmični sati (za overtime)
-        final workerWeekShifts = weekShifts
-            .where((s) => s.workerId == worker.uid)
-            .toList();
-        final weekMinutes = workerWeekShifts.fold<int>(
-            0, (sum, s) => sum + s.durationMinutes);
+        final workerWeekShifts =
+            weekShifts.where((s) => s.workerId == worker.uid).toList();
+        final weekMinutes =
+            workerWeekShifts.fold<int>(0, (sum, s) => sum + s.durationMinutes);
 
         // Prekovremeno = iznad 40h (2400 min) u sedmici
-        final overtimeMinutes =
-            weekMinutes > 2400 ? weekMinutes - 2400 : 0;
+        final overtimeMinutes = weekMinutes > 2400 ? weekMinutes - 2400 : 0;
 
         totalMinutesMonth += monthMinutes;
 
@@ -185,12 +179,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+  static const _meseci = [
+    '',
+    'januar',
+    'februar',
+    'mart',
+    'april',
+    'maj',
+    'jun',
+    'jul',
+    'avgust',
+    'septembar',
+    'oktobar',
+    'novembar',
+    'decembar'
+  ];
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final now = DateTime.now();
-    final monthName = DateFormat('MMMM yyyy', 'sr').format(now);
+    final monthName = '${_meseci[now.month]} ${now.year}';
 
     return Scaffold(
       appBar: AppBar(
@@ -266,8 +276,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             Expanded(
                               child: _StatCard(
                                 label: 'Prekovremenih',
-                                value:
-                                    '${_data!.overtimeWorkers.length}',
+                                value: '${_data!.overtimeWorkers.length}',
                                 icon: Icons.timer_rounded,
                                 color: _data!.overtimeWorkers.isEmpty
                                     ? AppColors.success
@@ -457,8 +466,7 @@ class _StatCard extends StatelessWidget {
           Text(label, style: theme.textTheme.bodySmall),
           if (subtitle != null)
             Text(subtitle!,
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: color)),
+                style: theme.textTheme.bodySmall?.copyWith(color: color)),
         ],
       ),
     );
@@ -524,8 +532,8 @@ class _TopWorkerCard extends StatelessWidget {
           Container(
             width: 38,
             height: 38,
-            decoration: BoxDecoration(
-                color: avatarColor, shape: BoxShape.circle),
+            decoration:
+                BoxDecoration(color: avatarColor, shape: BoxShape.circle),
             child: Center(
               child: Text(
                 stat.worker.initials,
@@ -543,8 +551,7 @@ class _TopWorkerCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(stat.worker.fullName,
-                    style: theme.textTheme.titleLarge),
+                Text(stat.worker.fullName, style: theme.textTheme.titleLarge),
                 Text(
                   '${stat.shiftsCount} smena',
                   style: theme.textTheme.bodySmall,
@@ -587,8 +594,8 @@ class _OvertimeCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: isDark ? AppColors.cardDark : AppColors.cardLight,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-            color: AppColors.warning.withOpacity(0.4), width: 1.5),
+        border:
+            Border.all(color: AppColors.warning.withOpacity(0.4), width: 1.5),
       ),
       child: Row(
         children: [
@@ -610,8 +617,7 @@ class _OvertimeCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(stat.worker.fullName,
-                    style: theme.textTheme.titleLarge),
+                Text(stat.worker.fullName, style: theme.textTheme.titleLarge),
                 Row(
                   children: [
                     const Icon(Icons.warning_amber_rounded,
@@ -633,11 +639,9 @@ class _OvertimeCard extends StatelessWidget {
               Text(
                 '${totalWeekHours.toStringAsFixed(1)}h',
                 style: theme.textTheme.headlineSmall?.copyWith(
-                    color: AppColors.warning,
-                    fontWeight: FontWeight.w800),
+                    color: AppColors.warning, fontWeight: FontWeight.w800),
               ),
-              Text('ove sedmice',
-                  style: theme.textTheme.bodySmall),
+              Text('ove sedmice', style: theme.textTheme.bodySmall),
             ],
           ),
         ],
@@ -728,9 +732,7 @@ class _WorkerRow extends StatelessWidget {
             height: 1,
             indent: 14,
             endIndent: 14,
-            color: isDark
-                ? AppColors.dividerDark
-                : AppColors.dividerLight,
+            color: isDark ? AppColors.dividerDark : AppColors.dividerLight,
           ),
       ],
     );

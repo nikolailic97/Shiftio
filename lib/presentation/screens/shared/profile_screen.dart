@@ -383,12 +383,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 icon: Icons.workspace_premium_rounded,
                 label: 'Moja pretplata',
                 subtitle: 'Upravljaj planom i seat addon-ima',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const SubscriptionScreen(),
-                  ),
-                ),
+                onTap: () {
+                  final subProvider = context.read<SubscriptionProvider>();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ChangeNotifierProvider.value(
+                        value: subProvider,
+                        child: const SubscriptionScreen(),
+                      ),
+                    ),
+                  );
+                },
               ),
               const SizedBox(height: 24),
             ],

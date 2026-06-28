@@ -34,12 +34,23 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
   Future<void> _loadPackages() async {
     setState(() => _isLoadingPackages = true);
-    final packages = await _rcService.getPackages();
-    if (mounted) {
-      setState(() {
-        _packages = packages;
-        _isLoadingPackages = false;
-      });
+    try {
+      final packages = await _rcService.getPackages();
+      if (mounted) {
+        setState(() {
+          _packages = packages;
+          _isLoadingPackages = false;
+        });
+      }
+    } catch (e) {
+      // RevenueCat nije inicijalizovan (placeholder API ključevi) —
+      // subscription_screen radi u DEV modu bez pravih paketa
+      if (mounted) {
+        setState(() {
+          _packages = [];
+          _isLoadingPackages = false;
+        });
+      }
     }
   }
 

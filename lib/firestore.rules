@@ -5,30 +5,43 @@ service cloud.firestore {
     function isLoggedIn() {
       return request.auth != null;
     }
+
     function isOwner(uid) {
       return request.auth.uid == uid;
     }
+
     function getUserData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
+
     function getUserRole() {
       return getUserData().role;
     }
+
     function getUserCompanyId() {
       return getUserData().current_company_id;
     }
+
     function isAdmin() {
       return getUserRole() == 'admin';
     }
+
     function isManager() {
       return getUserRole() == 'manager';
     }
+
+    function isWorker() {
+      return getUserRole() == 'worker';
+    }
+
     function isAdminOrManager() {
       return isAdmin() || isManager();
     }
+
     function belongsToCompany(companyId) {
       return getUserCompanyId() == companyId;
     }
+
     function isCompanyOwner(companyId) {
       return isAdmin() && get(/databases/$(database)/documents/companies/$(companyId)).data.owner_id == request.auth.uid;
     }
@@ -40,7 +53,7 @@ service cloud.firestore {
       allow create: if isLoggedIn() && isOwner(userId);
       allow update: if isLoggedIn() && isOwner(userId)
         && !request.resource.data.diff(resource.data).affectedKeys()
-            .hasAny(['role', 'current_company_id', 'active_status']);
+          .hasAny(['role', 'current_company_id', 'active_status']);
       allow update: if isLoggedIn() && isAdmin()
         && belongsToCompany(resource.data.current_company_id)
         && isCompanyOwner(resource.data.current_company_id);
@@ -55,11 +68,28 @@ service cloud.firestore {
       allow delete: if isLoggedIn() && isCompanyOwner(companyId);
     }
 
+    // ─── SHIFTS ──────────────────────────────────────────────────────────
+    // Read je razdvojen na get (jedan dokument) i list (query) jer
+    // Firestore evaluira list/query protiv CELOG skupa allow-read pravila
+    // odjednom — ako bilo koje pravilo zavisi od polja koje nije deo
+    // where() filtera (npr. company_id kad worker query filtrira samo po
+    // worker_id), Firestore odbija CEO query kao bezbednosnu meru, čak i
+    // ako bi konkretan dokument prošao to pravilo. Razdvajanjem na get/list
+    // svaki tip operacije ima sopstveni, samodovoljan uslov.
     match /shifts/{shiftId} {
-      allow read: if isLoggedIn() && isWorker()
+      // Pojedinačno čitanje jednog shift dokumenta (npr. detail screen)
+      allow get: if isLoggedIn() && isWorker()
         && resource.data.worker_id == request.auth.uid;
-      allow read: if isLoggedIn() && isAdminOrManager()
+      allow get: if isLoggedIn() && isAdminOrManager()
         && belongsToCompany(resource.data.company_id);
+
+      // Query/list — worker upit MORA filtrirati po worker_id da bi prošao
+      allow list: if isLoggedIn() && isWorker()
+        && request.auth.uid == resource.data.worker_id;
+      // Query/list — admin/manager upit MORA filtrirati po company_id
+      allow list: if isLoggedIn() && isAdminOrManager()
+        && belongsToCompany(resource.data.company_id);
+
       allow create: if isLoggedIn() && isAdminOrManager()
         && request.resource.data.company_id == getUserCompanyId();
       allow update: if isLoggedIn() && isAdminOrManager()
@@ -67,16 +97,24 @@ service cloud.firestore {
       allow update: if isLoggedIn() && isWorker()
         && resource.data.worker_id == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['worker_comment', 'has_comment']);
+          .hasOnly(['worker_comment', 'has_comment']);
       allow delete: if isLoggedIn() && isAdmin()
         && belongsToCompany(resource.data.company_id);
     }
 
+    // ─── REQUESTS ────────────────────────────────────────────────────────
+    // Isti razlog za get/list razdvajanje kao kod shifts.
     match /requests/{requestId} {
-      allow read: if isLoggedIn() && isWorker()
+      allow get: if isLoggedIn() && isWorker()
         && resource.data.user_id == request.auth.uid;
-      allow read: if isLoggedIn() && isAdminOrManager()
+      allow get: if isLoggedIn() && isAdminOrManager()
         && belongsToCompany(resource.data.company_id);
+
+      allow list: if isLoggedIn() && isWorker()
+        && request.auth.uid == resource.data.user_id;
+      allow list: if isLoggedIn() && isAdminOrManager()
+        && belongsToCompany(resource.data.company_id);
+
       allow create: if isLoggedIn()
         && request.resource.data.user_id == request.auth.uid
         && request.resource.data.status == 'pending';
@@ -87,7 +125,7 @@ service cloud.firestore {
       allow update: if isLoggedIn() && isAdminOrManager()
         && belongsToCompany(resource.data.company_id)
         && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['status', 'reviewed_by', 'reviewed_at']);
+          .hasOnly(['status', 'reviewed_by', 'reviewed_at']);
       allow delete: if false;
     }
 
@@ -106,9 +144,30 @@ service cloud.firestore {
       allow update: if isLoggedIn()
         && resource.data.recipient_id == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['is_read', 'read_at']);
+          .hasOnly(['is_read', 'read_at']);
       allow create: if isLoggedIn() && isAdminOrManager();
       allow delete: if false;
+    }
+
+    // Subscription je vezana za firmu — čita je samo admin te firme.
+    // Write u produkciji ide samo kroz Cloud Functions / Admin SDK,
+    // ali dok Blaze plan nije aktivan i Cloud Functions nisu deployovane,
+    // dozvoljavamo direktan admin write za DEV/testiranje.
+    // TODO: promeniti allow write: if false kad se deploye Cloud Functions
+    match /subscriptions/{subscriptionId} {
+      allow read: if isLoggedIn() && isAdmin()
+        && belongsToCompany(resource.data.company_id);
+      allow write: if isLoggedIn() && isAdmin()
+        && belongsToCompany(request.resource.data.company_id);
+    }
+
+    // Leave policy (kvote za godišnji/bolovanje i sl.) — čitaju je
+    // admin i manager firme; menja je samo admin (on postavlja kvote).
+    match /leave_policies/{companyId} {
+      allow read: if isLoggedIn() && isAdminOrManager()
+        && belongsToCompany(companyId);
+      allow write: if isLoggedIn() && isAdmin()
+        && belongsToCompany(companyId);
     }
   }
 }

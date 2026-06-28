@@ -5,6 +5,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../data/models/shift_model.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/services/firestore_service.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/schedule_provider.dart';
 import '../../widgets/schedule/shift_time_picker.dart';
 
@@ -33,7 +34,8 @@ class _AdminShiftDetailScreenState extends State<AdminShiftDetailScreen> {
   bool _isSavingShift = false;
   late TimeOfDay _editStartTime;
   late int _editDurationMinutes;
-  late String _editWorkerId;
+  late String _editWorkerId; // zamena postojeceg radnika
+  final Set<String> _additionalWorkerIds = {}; // dodaj jos radnika na termin
 
   @override
   void initState() {
@@ -49,6 +51,7 @@ class _AdminShiftDetailScreenState extends State<AdminShiftDetailScreen> {
     );
     _editDurationMinutes = widget.shift.durationMinutes;
     _editWorkerId = widget.shift.workerId;
+    _additionalWorkerIds.clear();
   }
 
   @override
@@ -82,7 +85,8 @@ class _AdminShiftDetailScreenState extends State<AdminShiftDetailScreen> {
     );
     return _editStartTime != originalStart ||
         _editDurationMinutes != widget.shift.durationMinutes ||
-        _editWorkerId != widget.shift.workerId;
+        _editWorkerId != widget.shift.workerId ||
+        _additionalWorkerIds.isNotEmpty;
   }
 
   Future<void> _saveShiftChanges() async {
@@ -104,13 +108,33 @@ class _AdminShiftDetailScreenState extends State<AdminShiftDetailScreen> {
       _editStartTime.minute,
     );
 
-    final success = await context.read<ScheduleProvider>().updateShiftDetails(
-          shiftId: widget.shift.shiftId,
-          startTime: newStartTime,
-          durationMinutes: _editDurationMinutes,
-          workerId:
-              _editWorkerId != widget.shift.workerId ? _editWorkerId : null,
-        );
+    final scheduleProvider = context.read<ScheduleProvider>();
+    bool success = true;
+
+    // 1. Ažuriraj postojeću smenu (vreme, trajanje, i/ili zamena radnika)
+    success = await scheduleProvider.updateShiftDetails(
+      shiftId: widget.shift.shiftId,
+      startTime: newStartTime,
+      durationMinutes: _editDurationMinutes,
+      workerId: _editWorkerId != widget.shift.workerId
+          ? _editWorkerId
+          : null,
+    );
+
+    // 2. Kreiraj nove smene za dodatne radnike na isti termin
+    if (success && _additionalWorkerIds.isNotEmpty) {
+      final user = context.read<AuthProvider>().currentUser;
+      final companyId = user?.currentCompanyId ?? widget.shift.companyId;
+
+      success = await scheduleProvider.createShift(
+        companyId: companyId,
+        workerIds: _additionalWorkerIds.toList(),
+        startTime: newStartTime,
+        durationMinutes: _editDurationMinutes,
+        date: widget.shift.date,
+        noteAdmin: widget.shift.noteAdmin,
+      );
+    }
 
     if (mounted) {
       setState(() {
@@ -120,19 +144,16 @@ class _AdminShiftDetailScreenState extends State<AdminShiftDetailScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content:
-              Text(success ? 'Smena je ažurirana' : 'Greška pri izmeni smene'),
+          content: Text(success
+              ? _additionalWorkerIds.isNotEmpty
+                  ? 'Smena ažurirana, dodato ${_additionalWorkerIds.length} novih radnika'
+                  : 'Smena je ažurirana'
+              : 'Greška pri izmeni smene'),
           backgroundColor: success ? AppColors.success : AppColors.error,
         ),
       );
 
-      if (success) {
-        // Smena se osvežava preko stream-a u ScheduleProvider, ali
-        // lokalno polje 'widget.shift' ostaje staro u ovoj instanci
-        // ekrana — vraćamo se nazad da admin vidi ažurirano stanje na
-        // listi, umesto da ručno sinhronizujemo immutable model ovde.
-        Navigator.pop(context);
-      }
+      if (success) Navigator.pop(context);
     }
   }
 
@@ -358,7 +379,12 @@ class _AdminShiftDetailScreenState extends State<AdminShiftDetailScreen> {
                   const SizedBox(height: 20),
 
                   // ─── Zamena radnika ──────────────────────────────────────
-                  Text('Radnik', style: theme.textTheme.titleLarge),
+                  Text('Zameni radnika', style: theme.textTheme.titleLarge),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Izaberi ko radi ovu smenu (zamena postojećeg):',
+                    style: theme.textTheme.bodySmall,
+                  ),
                   const SizedBox(height: 10),
                   if (team.isEmpty)
                     Text('Nema radnika u firmi',
@@ -366,12 +392,17 @@ class _AdminShiftDetailScreenState extends State<AdminShiftDetailScreen> {
                   else
                     ...team.map((member) {
                       final isSelected = _editWorkerId == member.uid;
+                      // Ne prikazuj radnike koji su već dodati kao dodatni
+                      final isAdditional = _additionalWorkerIds.contains(member.uid);
+                      if (isAdditional) return const SizedBox.shrink();
+
                       final color = AppColors.avatarColors[
                           member.uid.hashCode.abs() %
                               AppColors.avatarColors.length];
 
                       return GestureDetector(
-                        onTap: () => setState(() => _editWorkerId = member.uid),
+                        onTap: () =>
+                            setState(() => _editWorkerId = member.uid),
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 150),
                           margin: const EdgeInsets.only(bottom: 8),
@@ -427,6 +458,91 @@ class _AdminShiftDetailScreenState extends State<AdminShiftDetailScreen> {
                         ),
                       );
                     }),
+
+                  // ─── Dodaj još radnika na isti termin ─────────────────────
+                  const SizedBox(height: 16),
+                  const Divider(height: 1),
+                  const SizedBox(height: 12),
+                  Text('Dodaj još radnika na ovaj termin',
+                      style: theme.textTheme.titleLarge),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Ovi radnici dobijaju novu smenu u istom terminu:',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 10),
+                  ...team
+                      .where((m) => m.uid != _editWorkerId)
+                      .map((member) {
+                    final isChecked =
+                        _additionalWorkerIds.contains(member.uid);
+                    final color = AppColors.avatarColors[
+                        member.uid.hashCode.abs() %
+                            AppColors.avatarColors.length];
+
+                    return GestureDetector(
+                      onTap: () => setState(() {
+                        if (isChecked) {
+                          _additionalWorkerIds.remove(member.uid);
+                        } else {
+                          _additionalWorkerIds.add(member.uid);
+                        }
+                      }),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: isChecked
+                              ? AppColors.success.withOpacity(0.08)
+                              : isDark
+                                  ? AppColors.backgroundDark
+                                  : AppColors.backgroundLight,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isChecked
+                                ? AppColors.success
+                                : Colors.transparent,
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                  color: color, shape: BoxShape.circle),
+                              child: Center(
+                                child: Text(member.initials,
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700)),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(member.fullName,
+                                  style: theme.textTheme.titleLarge),
+                            ),
+                            Icon(
+                              isChecked
+                                  ? Icons.check_box_rounded
+                                  : Icons.check_box_outline_blank_rounded,
+                              color: isChecked
+                                  ? AppColors.success
+                                  : isDark
+                                      ? AppColors.textSecondaryDark
+                                      : AppColors.textSecondaryLight,
+                              size: 22,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
 
                   const SizedBox(height: 16),
                   ElevatedButton(

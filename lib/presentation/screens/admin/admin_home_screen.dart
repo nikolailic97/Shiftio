@@ -74,9 +74,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             automaticallyImplyLeading: false,
             title: Row(
               children: [
-                // Logo — zamenjen stari Container sa "S"
                 Image.asset(
-                  'assets/icons/app_logo_bg.png',
+                  'assets/icons/app_logo_transparent.png',
                   width: 34,
                   height: 34,
                 ),

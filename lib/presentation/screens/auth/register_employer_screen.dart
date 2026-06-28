@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../admin/admin_home_screen.dart';
+import '../shared/onboarding_screen.dart';
 
 class RegisterEmployerScreen extends StatefulWidget {
   const RegisterEmployerScreen({super.key});
@@ -21,12 +22,10 @@ class _RegisterEmployerScreenState extends State<RegisterEmployerScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final _companyNameController = TextEditingController();
-
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
   int _currentStep = 0;
   DateTime? _birthDate;
-
   final DateFormat _dateFmt = DateFormat('dd.MM.yyyy');
 
   @override
@@ -74,10 +73,34 @@ class _RegisterEmployerScreenState extends State<RegisterEmployerScreen> {
     );
 
     if (success && mounted) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const AdminHomeScreen()),
-        (route) => false,
-      );
+      // Dohvati companyId i inviteCode iz tek kreiranog korisnika
+      final user = authProvider.currentUser;
+      final companyId = user?.currentCompanyId;
+
+      if (companyId != null) {
+        // Dohvati invite code iz Firestore
+        String inviteCode = '';
+        try {
+          final company = await authProvider.getCompany(companyId);
+          inviteCode = company?.inviteCode ?? '';
+        } catch (_) {}
+
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (_) => OnboardingScreen(
+              companyId: companyId,
+              inviteCode: inviteCode,
+            ),
+          ),
+          (route) => false,
+        );
+      } else {
+        // Fallback ako companyId nije dostupan
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const AdminHomeScreen()),
+          (route) => false,
+        );
+      }
     }
   }
 
@@ -174,14 +197,15 @@ class _RegisterEmployerScreenState extends State<RegisterEmployerScreen> {
                     ),
                   ),
 
-                // ─── Step 0 ────────────────────────────────────────────────────
+                // ─── Step 0 — Lični podaci ────────────────────────────────────
                 if (_currentStep == 0) ...[
                   Text('Vaši podaci', style: theme.textTheme.headlineMedium),
                   const SizedBox(height: 4),
-                  Text('Ovi podaci će biti prikazani vašem timu.',
-                      style: theme.textTheme.bodyMedium),
+                  Text(
+                    'Ovi podaci će biti prikazani vašem timu.',
+                    style: theme.textTheme.bodyMedium,
+                  ),
                   const SizedBox(height: 24),
-
                   Row(
                     children: [
                       Expanded(
@@ -207,7 +231,6 @@ class _RegisterEmployerScreenState extends State<RegisterEmployerScreen> {
                     ],
                   ),
                   const SizedBox(height: 14),
-
                   // Datum rođenja
                   GestureDetector(
                     onTap: _pickBirthDate,
@@ -220,7 +243,8 @@ class _RegisterEmployerScreenState extends State<RegisterEmployerScreen> {
                             : AppColors.inputFillLight,
                         borderRadius: BorderRadius.circular(14),
                         border: _birthDate != null
-                            ? Border.all(color: AppColors.primary, width: 2)
+                            ? Border.all(
+                                color: AppColors.primary, width: 2)
                             : null,
                       ),
                       child: Row(
@@ -243,7 +267,6 @@ class _RegisterEmployerScreenState extends State<RegisterEmployerScreen> {
                     ),
                   ),
                   const SizedBox(height: 14),
-
                   TextFormField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
@@ -263,7 +286,6 @@ class _RegisterEmployerScreenState extends State<RegisterEmployerScreen> {
                     },
                   ),
                   const SizedBox(height: 14),
-
                   TextFormField(
                     controller: _phoneController,
                     keyboardType: TextInputType.phone,
@@ -276,7 +298,6 @@ class _RegisterEmployerScreenState extends State<RegisterEmployerScreen> {
                     validator: (v) => v!.isEmpty ? 'Obavezno' : null,
                   ),
                   const SizedBox(height: 14),
-
                   TextFormField(
                     controller: _passwordController,
                     obscureText: _obscurePassword,
@@ -287,10 +308,11 @@ class _RegisterEmployerScreenState extends State<RegisterEmployerScreen> {
                           size: 20, color: AppColors.primary),
                       suffixIcon: IconButton(
                         icon: Icon(
-                            _obscurePassword
-                                ? Icons.visibility_outlined
-                                : Icons.visibility_off_outlined,
-                            size: 20),
+                          _obscurePassword
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          size: 20,
+                        ),
                         onPressed: () => setState(
                             () => _obscurePassword = !_obscurePassword),
                       ),
@@ -302,7 +324,6 @@ class _RegisterEmployerScreenState extends State<RegisterEmployerScreen> {
                     },
                   ),
                   const SizedBox(height: 14),
-
                   TextFormField(
                     controller: _confirmPasswordController,
                     obscureText: _obscureConfirm,
@@ -313,12 +334,13 @@ class _RegisterEmployerScreenState extends State<RegisterEmployerScreen> {
                           size: 20, color: AppColors.primary),
                       suffixIcon: IconButton(
                         icon: Icon(
-                            _obscureConfirm
-                                ? Icons.visibility_outlined
-                                : Icons.visibility_off_outlined,
-                            size: 20),
-                        onPressed: () =>
-                            setState(() => _obscureConfirm = !_obscureConfirm),
+                          _obscureConfirm
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          size: 20,
+                        ),
+                        onPressed: () => setState(
+                            () => _obscureConfirm = !_obscureConfirm),
                       ),
                     ),
                     validator: (v) {
@@ -330,19 +352,20 @@ class _RegisterEmployerScreenState extends State<RegisterEmployerScreen> {
                     },
                   ),
                   const SizedBox(height: 28),
-
                   ElevatedButton(
                     onPressed: _nextStep,
                     child: const Text('Nastavi'),
                   ),
                 ],
 
-                // ─── Step 1 ────────────────────────────────────────────────────
+                // ─── Step 1 — Firma ───────────────────────────────────────────
                 if (_currentStep == 1) ...[
                   Text('Vaša firma', style: theme.textTheme.headlineMedium),
                   const SizedBox(height: 4),
-                  Text('Kreiraćemo firmu i generisati jedinstveni ID za vas.',
-                      style: theme.textTheme.bodyMedium),
+                  Text(
+                    'Kreiraćemo firmu i generisati jedinstveni ID za vas.',
+                    style: theme.textTheme.bodyMedium,
+                  ),
                   const SizedBox(height: 24),
                   TextFormField(
                     controller: _companyNameController,
@@ -353,7 +376,8 @@ class _RegisterEmployerScreenState extends State<RegisterEmployerScreen> {
                       prefixIcon: Icon(Icons.business_rounded,
                           size: 20, color: AppColors.primary),
                     ),
-                    validator: (v) => v!.isEmpty ? 'Unesite naziv firme' : null,
+                    validator: (v) =>
+                        v!.isEmpty ? 'Unesite naziv firme' : null,
                   ),
                   const SizedBox(height: 20),
                   Container(
@@ -361,8 +385,8 @@ class _RegisterEmployerScreenState extends State<RegisterEmployerScreen> {
                     decoration: BoxDecoration(
                       color: AppColors.infoLight,
                       borderRadius: BorderRadius.circular(14),
-                      border:
-                          Border.all(color: AppColors.info.withOpacity(0.25)),
+                      border: Border.all(
+                          color: AppColors.info.withOpacity(0.25)),
                     ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -375,8 +399,8 @@ class _RegisterEmployerScreenState extends State<RegisterEmployerScreen> {
                             '• Dobićete 15-karakterni ID za firmu\n'
                             '• Podelite ID sa radnicima da se pridruže\n'
                             '• ID možete kopirati u Podešavanjima',
-                            style: theme.textTheme.bodyMedium
-                                ?.copyWith(color: AppColors.info, height: 1.6),
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                                color: AppColors.info, height: 1.6),
                           ),
                         ),
                       ],
@@ -390,7 +414,8 @@ class _RegisterEmployerScreenState extends State<RegisterEmployerScreen> {
                             width: 22,
                             height: 22,
                             child: CircularProgressIndicator(
-                                color: Colors.white, strokeWidth: 2.5))
+                                color: Colors.white, strokeWidth: 2.5),
+                          )
                         : const Text('Kreiraj nalog i firmu'),
                   ),
                 ],
@@ -408,6 +433,7 @@ class _RegisterEmployerScreenState extends State<RegisterEmployerScreen> {
 class _StepDot extends StatelessWidget {
   final bool isActive;
   final String label;
+
   const _StepDot({required this.isActive, required this.label});
 
   @override
